@@ -1,0 +1,13 @@
+{
+  "Author": "xulai1001",
+  "InternalName": "EventLoggerPlugin",
+  "Name": "记录事件信息&干劲等",
+  "Description": "记录掉干劲的次数，事件加的属性，走完率等",
+  "Changelog": "",
+  "Version": "1.0.0",
+  "Dependencies": [],
+  "Targets": [],
+  "RepositoryUrl": "https://github.com/URA-Plugins/EventLoggerPlugin",
+  "DownloadUrl": "https://gh.shuise.dev/github.com/URA-Plugins/EventLoggerPlugin/releases/latest/download/EventLoggerPlugin.zip",
+  "LastUpdate": "1751719983"
+}
