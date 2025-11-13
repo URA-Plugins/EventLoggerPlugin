@@ -68,7 +68,14 @@ namespace EventLoggerPlugin
                     if (GameStats.stats[GameStats.currentTurn] != null)
                         GameStats.stats[GameStats.currentTurn].isTrainingFailed = true;
                 }
-                EventLogger.Start(jo.ToObject<Gallop.SingleModeCheckEventResponse>()); // 开始记录事件，跳过从上一次调用update到这里的所有事件和训练
+                var @event = jo.ToObject<Gallop.SingleModeCheckEventResponse>();
+                if (EventLogger.captureVitalSpending)
+                {
+                    EventLogger.IsStart = true;
+                    EventLogger.Update(@event);
+                } else {
+                    EventLogger.Start(@event); // 开始记录事件，跳过从上一次调用update到这里的所有事件和训练
+                }                
             }
 
             if (data.ContainsKey("unchecked_event_array"))
