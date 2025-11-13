@@ -114,6 +114,9 @@ namespace EventLoggerPlugin
         public static bool IsStart = false;
         public static int InitTurn = 0;    // 调用Init时的起始回合数
         public static List<int> CardIDs;   // 存放配卡，以过滤乱入事件
+        public static int vitalSpent = 0;  // 温泉杯统计体力消耗
+        public static int LastVital = 0;    // 上一个动作的体力消耗
+        public static bool captureVitalSpending = false;    // 是否统计体力消耗的开关
 
         // 获取当前的属性
         public static LogValue Capture(SingleModeCheckEventResponse @event)
@@ -173,6 +176,11 @@ namespace EventLoggerPlugin
             lastSkill = new Dictionary<int, Gallop.SkillData>();
             lastSkillTips = new Dictionary<int, SkillTips>();
             lastProper = new Dictionary<string, int>();
+            vitalSpent = 0;
+            captureVitalSpending = false;
+            LastEvent = new LogEvent();
+            LastValue = new LogValue();
+            LastVital = 0;
         }
 
         // 开始记录属性变化
@@ -186,6 +194,12 @@ namespace EventLoggerPlugin
         // 结束记录前一个事件的属性变化，并保存
         public static void Update(SingleModeCheckEventResponse @event)
         {
+            // sanity check
+            if (LastEvent == null)
+            {
+                Init(@event);
+                IsStart = true;
+            }
             // 获取上一个事件的结果
             if (IsStart && @event.data.select_index != null && @event.data.select_index != 1)
             {
@@ -260,11 +274,27 @@ namespace EventLoggerPlugin
                 lastProper = currProper;
             }
 
+            // 获得上一个动作或事件的属性并保存
+            var currentValue = Capture(@event);
+            LastEvent.Value = currentValue - LastValue;
+            // 记录体力消耗(不记录恢复)
+            if (captureVitalSpending)
+            {
+                LastVital = LastEvent.Value.Vital;
+                if (LastVital < 0)
+                {
+                    var spent = Math.Abs(LastVital);
+                    vitalSpent += spent;
+                    Print($"[blue]体力 - {spent}[/]");
+                } 
+                else if (LastVital > 0)
+                {
+                    Print($"[green]体力 + {LastVital}[/]");
+                }
+            }
+            // 分析事件
             if (IsStart && @event.data.unchecked_event_array != null)
             {
-                // 获得上一个事件的属性并保存
-                var currentValue = Capture(@event);
-                LastEvent.Value = currentValue - LastValue;
                 if (@event.data.unchecked_event_array.Count() > 0)
                 {
                     var choices = @event.data.unchecked_event_array.First().event_contents_info.choice_array;
@@ -339,13 +369,13 @@ namespace EventLoggerPlugin
                         Print($"[{color}]本次继承属性：{LastEvent.Stats}, Pt: {LastEvent.Pt}[/]");
                         InheritStats.Add(LastEvent.Stats);
                     }
-                }
-
-                // 保存当前回合数和story_id到lastEvent，用于下次调用
-                LastValue = currentValue;
-                LastEvent.Turn = @event.data.chara_info.turn;
+                } // if excludedevents
                 LastEvent.StoryId = @event.data.unchecked_event_array.Count() > 0 ? @event.data.unchecked_event_array.First().story_id : -1;
-            }
+            } // if isstart
+            // 保存当前回合数和story_id到lastEvent，用于下次调用
+            LastValue = currentValue;
+            LastEvent.Turn = @event.data.chara_info.turn;
+            
         }
         /// <summary>
         ///  判断是否断事件
