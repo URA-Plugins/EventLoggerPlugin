@@ -81,7 +81,7 @@ namespace EventLoggerPlugin
     {
         public const int MinEventStrength = 25;
         // 排除佐岳充电,SS,继承,老登三选一,第三年凯旋门（输/赢）,以及无事发生直接到下一回合的情况
-        public static readonly int[] ExcludedEvents = [809043003, 809050003, 400006112, 400000040, 400006474, 400006439, 830241003, -1];
+        public static readonly int[] ExcludedEvents = [809043003, 400006112, 400000040, 400006474, 400006439, 830241003, -1];
         // 友人和团队卡不计入连续事件，这里仅排除这几个
         public static readonly int[] ExcludedFriendCards = [30160, 30137, 30067, 30052, 10104, 30188, 10109, 30207, 30241, 30257, 30276, 10128, 10138];
         // 这些回合不能触发连续事件
@@ -317,22 +317,30 @@ namespace EventLoggerPlugin
                         {
                             if (CardIDs.Contains(cardId))   // 是携带的支援卡
                             {
-                                ++CardEventCount;
-                                --CardEventRemaining;
-                                if (which == rarity)
+                                // sanity check 防止重入
+                                if (CardEvents.Any(e => e.StoryId == LastEvent.StoryId))
                                 {
-                                    ++CardEventFinishCount;    // 走完了N个事件（N是稀有度）则认为连续事件走完了                                    
-                                    Print($"[green]连续事件完成[/]");
+                                    AnsiConsole.MarkupLine($"[red]已经记录该连续事件: {LastEvent.StoryId}, 忽略重复记录[/]");
                                 }
                                 else
                                 {
-                                    if (IsEventBreaking(null))
-                                        ++CardEventFinishCount;    // 走完了N个事件（N是稀有度）则认为连续事件走完了
+                                    ++CardEventCount;
+                                    --CardEventRemaining;
+                                    if (which == rarity)
+                                    {
+                                        ++CardEventFinishCount;    // 走完了N个事件（N是稀有度）则认为连续事件走完了                                    
+                                        Print($"[green]连续事件完成[/]");
+                                    }
                                     else
-                                        Print($"[yellow]连续事件 {which} / {rarity}[/]");
+                                    {
+                                        if (IsEventBreaking(null))
+                                            ++CardEventFinishCount;    // 走完了N个事件（N是稀有度）则认为连续事件走完了
+                                        else
+                                            Print($"[yellow]连续事件 {which} / {rarity}[/]");
+                                    }
+                                    if (CardEventFinishCount == 5)
+                                        CardEventFinishTurn = @event.data.chara_info.turn;
                                 }
-                                if (CardEventFinishCount == 5)
-                                    CardEventFinishTurn = @event.data.chara_info.turn;
                             }
                             else
                             {

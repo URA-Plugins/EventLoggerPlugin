@@ -60,6 +60,10 @@ namespace EventLoggerPlugin
             if (!jo.HasCharaInfo()) return;
             if (jo["data"] is null || jo["data"] is not JObject data) return;
 
+            // 有command_result -> 记录训练结果
+            //  captureVitalSpending=False -> 跳过训练结果，记录事件(start)
+            //  captureVitalSpending=True -> 记录训练体力和事件(update)
+            // 没有command_result, 有unchecked_event_array -> 记录事件(update)
             if (data["command_result"] is JObject command_result) // 训练结果
             {
                 if (command_result["result_state"].ToInt() == 1) // 训练失败
@@ -69,15 +73,19 @@ namespace EventLoggerPlugin
                         GameStats.stats[GameStats.currentTurn].isTrainingFailed = true;
                 }
                 var @event = jo.ToObject<Gallop.SingleModeCheckEventResponse>();
-                if (EventLogger.captureVitalSpending)
+                if (@event != null)
                 {
-                    EventLogger.IsStart = true;
-                    EventLogger.Update(@event);
-                } else {
-                    EventLogger.Start(@event); // 开始记录事件，跳过从上一次调用update到这里的所有事件和训练
-                }                
+                    if (EventLogger.captureVitalSpending)
+                    {
+                        EventLogger.IsStart = true;
+                        EventLogger.Update(@event);
+                    }
+                    else
+                    {
+                        EventLogger.Start(@event); // 开始记录事件，跳过从上一次调用update到这里的所有事件和训练
+                    }
+                }
             }
-
             if (data.ContainsKey("unchecked_event_array"))
             {
                 var @event = jo.ToObject<Gallop.SingleModeCheckEventResponse>();
