@@ -16,7 +16,7 @@ namespace EventLoggerPlugin
         public string[] Targets => [];
         public async Task UpdatePlugin(ProgressContext ctx)
         {
-            var progress = ctx.AddTask($"[{Name}] 更新");
+            var progress = ctx.AddTask($"[[{Name}]] 更新");
 
             using var client = new HttpClient();
             using var resp = await client.GetAsync($"https://api.github.com/repos/URA-Plugins/{Name}/releases/latest");
