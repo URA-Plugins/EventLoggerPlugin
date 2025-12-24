@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using MessagePack;
+using Newtonsoft.Json.Linq;
 using Spectre.Console;
 using System.IO.Compression;
 using UmamusumeResponseAnalyzer;
@@ -7,6 +8,27 @@ using UmamusumeResponseAnalyzer.Plugin;
 [assembly: LoadInHostContext]
 namespace EventLoggerPlugin
 {
+    [MessagePackObject]
+    public class SingleModeRaceHistory
+    {
+        [Key("turn")]
+        public int turn;
+        [Key("program_id")]
+        public int program_id;
+        [Key("weather")]
+        public int weather;
+        [Key("ground_condition")]
+        public int ground_condition;
+        [Key("running_style")]
+        public int running_style;
+        [Key("result_rank")]
+        public int result_rank;
+        [Key("frame_order")]
+        public int frame_order;
+        [Key("npc_count")]
+        public int npc_count;
+    }
+
     public class EventLoggerPlugin : IPlugin
     {
         public Version Version => new(1, 0, 0);
@@ -149,6 +171,13 @@ namespace EventLoggerPlugin
                     }
                 }
             }
+
+            if (data.ContainsKey("race_history"))
+            {
+                var history = data["race_history"].ToObject<List<SingleModeRaceHistory>>();
+                if (history != null)
+                    EventLogger.UpdateRaceHistory(history.ToArray());
+            }
         }
         [Analyzer(false, -1)]
         public void ParseChoiceRequest(JObject jo)
@@ -170,6 +199,26 @@ namespace EventLoggerPlugin
                 if (GameStats.stats[turn] != null)
                     GameStats.stats[turn].playerChoice = trainingId;
             }
+            /*
+            if (jo["single_mode_race_entry_request_common"] != null) // 点击了比赛
+            {
+                var turn = jo["single_mode_race_entry_request_common"]["current_turn"].ToInt();
+                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 进入比赛[/]");
+                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
+            }
+            if (jo["single_mode_race_start_request_common"] != null)
+            {
+                var turn = jo["single_mode_race_start_request_common"]["current_turn"].ToInt();
+                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 比赛中[/]");
+                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
+            }
+            if (jo["single_mode_race_out_request_common"] != null )
+            {
+                var turn = jo["single_mode_race_out_request_common"]["current_turn"].ToInt();
+                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 比赛结束[/]");
+                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
+            }
+            */
         }
     }
 }
