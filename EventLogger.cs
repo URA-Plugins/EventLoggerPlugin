@@ -1,11 +1,14 @@
 ﻿using Gallop;
+using MessagePack;
 using MathNet.Numerics.Distributions;
+using MessagePack;
 using Spectre.Console;
 using UmamusumeResponseAnalyzer;
 using static UmamusumeResponseAnalyzer.Localization.Game;
 
 namespace EventLoggerPlugin
 {
+
     public class LogValue
     {
         public static LogValue NULL = new();
@@ -101,6 +104,7 @@ namespace EventLoggerPlugin
         public static Dictionary<int, SkillTips> lastSkillTips;   // 上一次的Hint表
         public static Dictionary<int, Gallop.SkillData> lastSkill;  // 上一次的技能表
         public static Dictionary<string, int> lastProper;    // 上一次的适性
+        public static List<int> raceHistory;    // 哪些回合跑了比赛。回合数从1开始
         // 特殊支援卡（只有一段事件）
         public static Dictionary<int, int> CardEventSpecialCount = new Dictionary<int, int>
         {
@@ -523,6 +527,17 @@ namespace EventLoggerPlugin
                 }
             }
             return ret;
+        }
+
+        public static void UpdateRaceHistory(SingleModeRaceHistory[] history)
+        {
+            raceHistory = new List<int>();
+            foreach (var h in history)
+            {
+                if (h.result_rank == 1)
+                    raceHistory.Add(h.turn);
+            }
+            AnsiConsole.MarkupLine($"[magenta]当前已取胜 {raceHistory.Count} 场[/]");
         }
     }
 }
