@@ -1,229 +1,436 @@
-﻿using MessagePack;
-using Newtonsoft.Json.Linq;
+using Gallop;
+using Gallop.Endpoints;
 using Spectre.Console;
-using System.IO.Compression;
-using UmamusumeResponseAnalyzer;
+using UmamusumeResponseAnalyzer.LiveDisplay;
 using UmamusumeResponseAnalyzer.Plugin;
 
-[assembly: LoadInHostContext]
+// 共享库插件：依赖它的场景分析器都用 [assembly: SharedContextWith("EventLoggerPlugin")] 与它同组，
+// 一起进一个可卸载的 collectible ALC（整组可热重载），不再用 LoadInHostContext 进永不可卸载的 default ALC。
 namespace EventLoggerPlugin
 {
-    [MessagePackObject]
-    public class SingleModeRaceHistory
-    {
-        [Key("turn")]
-        public int turn;
-        [Key("program_id")]
-        public int program_id;
-        [Key("weather")]
-        public int weather;
-        [Key("ground_condition")]
-        public int ground_condition;
-        [Key("running_style")]
-        public int running_style;
-        [Key("result_rank")]
-        public int result_rank;
-        [Key("frame_order")]
-        public int frame_order;
-        [Key("npc_count")]
-        public int npc_count;
-    }
-
     public class EventLoggerPlugin : IPlugin
     {
-        [PluginDescription("记录事件信息&干劲等")]
         public string Name => "EventLoggerPlugin";
         public string Author => "xulai1001";
         public string[] Targets => [];
-        public async Task UpdatePlugin(ProgressContext ctx)
+        string DataDirectory => Path.Combine("PluginData", Name);
+
+        public void Initialize(IPluginContext context)
         {
-            var progress = ctx.AddTask($"[[{Name}]] 更新");
-
-            using var client = new HttpClient();
-            using var resp = await client.GetAsync($"https://api.github.com/repos/URA-Plugins/{Name}/releases/latest");
-            var json = await resp.Content.ReadAsStringAsync();
-            var jo = JObject.Parse(json);
-
-            var isLatest = ("v" + ((IPlugin)this).Version.ToString()).Equals("v" + jo["tag_name"]?.ToString());
-            if (isLatest)
-            {
-                progress.Increment(progress.MaxValue);
-                progress.StopTask();
-                return;
-            }
-            progress.Increment(25);
-
-            var downloadUrl = jo["assets"][0]["browser_download_url"].ToString();
-            if (Config.Updater.IsGithubBlocked && !Config.Updater.ForceUseGithubToUpdate)
-            {
-                downloadUrl = downloadUrl.Replace("https://", "https://gh.shuise.dev/");
-            }
-            using var msg = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
-            using var stream = await msg.Content.ReadAsStreamAsync();
-            var buffer = new byte[8192];
-            while (true)
-            {
-                var read = await stream.ReadAsync(buffer);
-                if (read == 0)
-                    break;
-                progress.Increment(read / msg.Content.Headers.ContentLength ?? 1 * 0.5);
-            }
-            using var archive = new ZipArchive(stream);
-            archive.ExtractToDirectory(Path.Combine("Plugins", Name), true);
-            progress.Increment(25);
-
-            progress.StopTask();
+            EventLogger.DataDirectory = DataDirectory;
+            Directory.CreateDirectory(EventLogger.DataDirectory);
+            EventLoggerDisplay.Initialize(context);
         }
 
-        [Analyzer(priority: -1)]
-        public void StartEventLogger(JObject jo)
+        public Task UpdatePlugin(ProgressContext ctx) => Task.CompletedTask;
+
+        [ResponseAnalyzer<GameApi.SingleMode.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeArc.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeArcCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeBreeders.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeBreedersCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeCook.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeCookCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeFree.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeFreeCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeLegend.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeLegendCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeLive.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeLiveCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeMecha.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeMechaCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeOnsen.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeOnsenCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModePioneer.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModePioneerCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeRamen.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeRamenCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeSport.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeSportCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeTeam.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeTeamCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleModeVenus.CheckEvent>(-1)]
+        public ValueTask StartEventLogger(SingleModeVenusCheckEventResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, response.data?.select_index_info_array));
+
+        [ResponseAnalyzer<GameApi.SingleMode.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeArc.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeArcExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeBreeders.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeBreedersExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeCook.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeCookExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeFree.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeFreeExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeLegend.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeLegendExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeLive.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeLiveExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeMecha.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeMechaExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeOnsen.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeOnsenExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModePioneer.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModePioneerExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeRamen.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeRamenExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeSport.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeSportExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeTeam.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeTeamExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleModeVenus.ExecCommand>(-1)]
+        public ValueTask StartEventLogger(SingleModeVenusExecCommandResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null), response.data?.command_result);
+
+        [ResponseAnalyzer<GameApi.SingleMode.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeArc.ArcRaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeArcArcRaceEndResponse response)
+            => AnalyzeResponse(default);
+
+        [ResponseAnalyzer<GameApi.SingleModeArc.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeArcRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeBreeders.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeBreedersRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeCook.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeCookRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeFree.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeFreeRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeLegend.LegendRaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeLegendLegendRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeLegend.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeLegendRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeLive.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeLiveRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeMecha.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeMechaRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeOnsen.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeOnsenRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModePioneer.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModePioneerRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeRamen.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeRamenRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeSport.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeSportRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeTeam.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeTeamRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeTeam.TeamRaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeTeamTeamRaceEndResponse response)
+            => AnalyzeResponse(default);
+
+        [ResponseAnalyzer<GameApi.SingleModeTeam.TeamRaceEndOut>(-1)]
+        public ValueTask StartEventLogger(SingleModeTeamTeamRaceEndOutResponse response)
+            => AnalyzeResponse(new(response.data?.chara_info, response.data?.unchecked_event_array, null));
+
+        [ResponseAnalyzer<GameApi.SingleModeVenus.RaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeVenusRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        [ResponseAnalyzer<GameApi.SingleModeVenus.VenusRaceEnd>(-1)]
+        public ValueTask StartEventLogger(SingleModeVenusVenusRaceEndResponse response)
+            => AnalyzeResponse(default, raceHistory: response.data?.race_history);
+
+        ValueTask AnalyzeResponse(
+            EventLoggerSnapshot snapshot,
+            SingleModeCommandResult? commandResult = null,
+            SingleRaceHistory[]? raceHistory = null)
         {
-            if (!jo.HasCharaInfo()) return;
-            if (jo["data"] is null || jo["data"] is not JObject data) return;
-
-            // 有command_result -> 记录训练结果
-            //  captureVitalSpending=False -> 跳过训练结果，记录事件(start)
-            //  captureVitalSpending=True -> 记录训练体力和事件(update)
-            // 没有command_result, 有unchecked_event_array -> 记录事件(update)
-            if (data["command_result"] is JObject command_result) // 训练结果
+            if (commandResult != null)
             {
-                if (command_result["result_state"].ToInt() == 1) // 训练失败
+                AnalyzeCommandResult(commandResult);
+                if (EventLogger.captureVitalSpending)
                 {
-                    AnsiConsole.MarkupLine("训练失败！");
-                    if (GameStats.stats[GameStats.currentTurn] != null)
-                        GameStats.stats[GameStats.currentTurn].isTrainingFailed = true;
+                    EventLogger.IsStart = true;
+                    EventLogger.Update(snapshot);
                 }
-                var @event = jo.ToObject<Gallop.SingleModeCheckEventResponse>();
-                if (@event != null)
+                else
                 {
-                    if (EventLogger.captureVitalSpending)
-                    {
-                        EventLogger.IsStart = true;
-                        EventLogger.Update(@event);
-                    }
-                    else
-                    {
-                        EventLogger.Start(@event); // 开始记录事件，跳过从上一次调用update到这里的所有事件和训练
-                    }
-                }
-            }
-            if (data.ContainsKey("unchecked_event_array"))
-            {
-                var @event = jo.ToObject<Gallop.SingleModeCheckEventResponse>();
-                if (@event != null)
-                {
-                    // 这时当前事件还没有生效，先显示上一个事件的收益
-                    EventLogger.Update(@event);
-                    foreach (var i in @event.data.unchecked_event_array)
-                    {
-                        if (GameStats.stats[GameStats.currentTurn] != null)
-                        {
-                            if (i.story_id == 830137001)//第一次点击女神
-                            {
-                                GameStats.stats[GameStats.currentTurn].venus_isVenusCountConcerned = false;
-                            }
-
-                            if (i.story_id == 830137003)//女神三选一事件
-                            {
-                                GameStats.stats[GameStats.currentTurn].venus_venusEvent = true;
-                            }
-
-
-                            if (i.story_id == 400006112)//ss训练
-                            {
-                                GameStats.stats[GameStats.currentTurn].larc_playerChoiceSS = true;
-                            }
-
-                            if (i.story_id == 809043002)//佐岳启动
-                            {
-                                GameStats.stats[GameStats.currentTurn].larc_zuoyueEvent = 5;
-                            }
-
-                            if (i.story_id == 809043003)//佐岳充电
-                            {
-                                var suc = i.event_contents_info.choice_array[0].select_index;
-                                var eventType = 0;
-                                if (suc == 1)//加心情
-                                {
-                                    eventType = 2;
-                                }
-                                else if (suc == 2)//不加心情
-                                {
-                                    eventType = 1;
-                                }
-
-                                GameStats.stats[GameStats.currentTurn].larc_zuoyueEvent = eventType;
-                            }
-                            if (i.story_id == 400006115)//远征佐岳加pt
-                            {
-                                GameStats.stats[GameStats.currentTurn].larc_zuoyueEvent = 4;
-                            }
-                            if (i.story_id == 809044002) // 凉花出门
-                            {
-                                GameStats.stats[GameStats.currentTurn].uaf_friendEvent = 5;
-                            }
-                            if (i.story_id == 809044003) // 凉花加体力
-                            {
-                                GameStats.stats[GameStats.currentTurn].uaf_friendEvent = 1;
-                            }
-                        }
-                    }
-                    // 如果检测到继承信息则立即显示
-                    if (@event.data.unchecked_event_array.Length > 0 &&
-                        @event.data.unchecked_event_array.First().succession_event_info != null)
-                    {
-                        EventLogger.AnalyzeSuccessionChoice(@event);
-                    }
+                    EventLogger.Start(snapshot);
                 }
             }
 
-            if (data.ContainsKey("race_history"))
+            if (snapshot.UncheckedEvents != null)
             {
-                var history = data["race_history"].ToObject<List<SingleModeRaceHistory>>();
-                if (history != null)
-                    EventLogger.UpdateRaceHistory(history.ToArray());
+                EventLogger.Update(snapshot);
+                AnalyzeScenarioFlags(snapshot.UncheckedEvents);
+
+                if (snapshot.UncheckedEvents.Length > 0 &&
+                    snapshot.UncheckedEvents.First().succession_event_info != null)
+                {
+                    EventLogger.AnalyzeSuccessionChoice(snapshot);
+                }
+            }
+
+            if (raceHistory != null)
+                EventLogger.UpdateRaceHistory(raceHistory);
+
+            return ValueTask.CompletedTask;
+        }
+
+        static void AnalyzeCommandResult(SingleModeCommandResult commandResult)
+        {
+            if (commandResult.result_state != 1) return;
+
+            EventLoggerDisplay.MarkupLog("[yellow]训练失败！[/]", LiveDisplaySeverity.Warning);
+            EventLoggerDisplay.Notify("训练失败！", LiveDisplaySeverity.Warning);
+            if (GameStats.stats[GameStats.currentTurn] != null)
+                GameStats.stats[GameStats.currentTurn].isTrainingFailed = true;
+        }
+
+        static void AnalyzeScenarioFlags(SingleModeEventInfo[] events)
+        {
+            foreach (var i in events)
+            {
+                var turnStats = GameStats.stats[GameStats.currentTurn];
+                if (turnStats == null) continue;
+
+                if (i.story_id == 830137001)
+                    turnStats.venus_isVenusCountConcerned = false;
+
+                if (i.story_id == 830137003)
+                    turnStats.venus_venusEvent = true;
+
+                if (i.story_id == 400006112)
+                    turnStats.larc_playerChoiceSS = true;
+
+                if (i.story_id == 809043002)
+                    turnStats.larc_zuoyueEvent = 5;
+
+                if (i.story_id == 809043003)
+                {
+                    var suc = EventLogger.FirstSelectIndex(i.event_contents_info.choice_array[0]);
+                    turnStats.larc_zuoyueEvent = suc switch
+                    {
+                        1 => 2,
+                        2 => 1,
+                        _ => 0
+                    };
+                }
+
+                if (i.story_id == 400006115)
+                    turnStats.larc_zuoyueEvent = 4;
+
+                if (i.story_id == 809044002)
+                    turnStats.uaf_friendEvent = 5;
+
+                if (i.story_id == 809044003)
+                    turnStats.uaf_friendEvent = 1;
             }
         }
-        [Analyzer(false, -1)]
-        public void ParseChoiceRequest(JObject jo)
+
+        [RequestAnalyzer<GameApi.SingleMode.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeArc.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeArcCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeBreeders.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeBreedersCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeCook.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeCookCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeFree.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeFreeCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeLegend.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeLegendCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeLive.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeLiveCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeMecha.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeMechaCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeOnsen.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeOnsenCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModePioneer.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModePioneerCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeRamen.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeRamenCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeSport.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeSportCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeTeam.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeTeamCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeVenus.CheckEvent>(-1)]
+        public ValueTask ParseChoiceRequest(SingleModeVenusCheckEventRequest request)
+            => ParseChoiceRequest(request.single_mode_check_event_request_common);
+
+        ValueTask ParseChoiceRequest(SingleModeCheckEventRequestCommon request)
         {
-            if (jo["choice_number"].ToInt() > 0)  // 玩家点击了事件
-            {
-                EventLogger.UpdatePlayerChoice(jo.ToObject<Gallop.SingleModeChoiceRequest>());
-            }
+            if (request.choice_number > 0)
+                EventLogger.UpdatePlayerChoice(request);
+
+            return ValueTask.CompletedTask;
         }
-        [Analyzer(false, -1)]
-        public void ParseTrainingRequest(JObject jo)
+
+        [RequestAnalyzer<GameApi.SingleMode.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeArc.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeArcExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeBreeders.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeBreedersExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeCook.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeCookExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeFree.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeFreeExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeLegend.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeLegendExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeLive.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeLiveExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeMecha.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeMechaExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeOnsen.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeOnsenExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModePioneer.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModePioneerExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeRamen.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeRamenExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeSport.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeSportExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeTeam.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeTeamExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        [RequestAnalyzer<GameApi.SingleModeVenus.ExecCommand>(-1)]
+        public ValueTask ParseTrainingRequest(SingleModeVenusExecCommandRequest request)
+            => ParseTrainingRequest(request.single_mode_exec_command_request_common);
+
+        ValueTask ParseTrainingRequest(SingleModeExecCommandRequestCommon request)
         {
-            if (jo["command_type"].ToInt() == 1) //玩家点击了训练
-            {
-                var @event = jo.ToObject<Gallop.SingleModeExecCommandRequest>();
-                var turn = @event.current_turn;
-                if (GameStats.currentTurn != 0 && turn != GameStats.currentTurn) return;
-                var trainingId = GameGlobal.ToTrainId[@event.command_id];
-                if (GameStats.stats[turn] != null)
-                    GameStats.stats[turn].playerChoice = trainingId;
-            }
-            /*
-            if (jo["single_mode_race_entry_request_common"] != null) // 点击了比赛
-            {
-                var turn = jo["single_mode_race_entry_request_common"]["current_turn"].ToInt();
-                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 进入比赛[/]");
-                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
-            }
-            if (jo["single_mode_race_start_request_common"] != null)
-            {
-                var turn = jo["single_mode_race_start_request_common"]["current_turn"].ToInt();
-                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 比赛中[/]");
-                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
-            }
-            if (jo["single_mode_race_out_request_common"] != null )
-            {
-                var turn = jo["single_mode_race_out_request_common"]["current_turn"].ToInt();
-                //AnsiConsole.MarkupLine($"[magenta]回合{turn}: 比赛结束[/]");
-                if (!EventLogger.raceHistory.Contains(turn)) EventLogger.raceHistory.Add(turn);
-            }
-            */
+            if (request.command_type != 1) return ValueTask.CompletedTask;
+
+            var turn = request.current_turn;
+            if (GameStats.currentTurn != 0 && turn != GameStats.currentTurn) return ValueTask.CompletedTask;
+            var trainingId = GameGlobal.ToTrainId[request.command_id];
+            if (GameStats.stats[turn] != null)
+                GameStats.stats[turn].playerChoice = trainingId;
+
+            return ValueTask.CompletedTask;
         }
     }
 }

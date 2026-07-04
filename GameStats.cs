@@ -1,9 +1,15 @@
 ﻿using MathNet.Numerics.Distributions;
 using Spectre.Console;
-using UmamusumeResponseAnalyzer;
 
 namespace EventLoggerPlugin
 {
+    public enum ScenarioType
+    {
+        GrandMasters = 5,
+        LArc = 6,
+        UAF = 7,
+        Legend = 10,
+    }
 
     public class TrainStats
     {
@@ -141,7 +147,7 @@ namespace EventLoggerPlugin
                 if (stats[i].motivation < stats[i - 1].motivation)
                     m_motDropCount += stats[i - 1].motivation - stats[i].motivation;
             }
-            AnsiConsole.MarkupLine($"这局掉了[yellow]{m_motDropCount}[/]级心情（忽略刚掉就回的情况）");
+            EventLoggerDisplay.MarkupLog($"这局掉了[yellow]{m_motDropCount}[/]级心情（忽略刚掉就回的情况）");
 
             //统计体力消耗和赌训练的次数
             {
@@ -165,8 +171,8 @@ namespace EventLoggerPlugin
                         totalFailureRate += failRate;
                     }
                 }
-                AnsiConsole.MarkupLine($"这局赌了[yellow]{totalGambleTimes}[/]次训练，失败了[yellow]{totalFailureTimes}[/]次，总失败率为[yellow]{totalFailureRate}[/]%");
-                AnsiConsole.MarkupLine($"训练消耗总体力：[yellow]{-totalVitalGain}[/]");
+                EventLoggerDisplay.MarkupLog($"这局赌了[yellow]{totalGambleTimes}[/]次训练，失败了[yellow]{totalFailureTimes}[/]次，总失败率为[yellow]{totalFailureRate}[/]%");
+                EventLoggerDisplay.MarkupLog($"训练消耗总体力：[yellow]{-totalVitalGain}[/]");
             }
             if (whichScenario == (int)ScenarioType.GrandMasters)
             {
@@ -187,7 +193,7 @@ namespace EventLoggerPlugin
                             }
                         }
                     }
-                    AnsiConsole.MarkupLine($"一共召唤了[aqua]{concernedTurnTotal}[/]次女神，女神来了[aqua]{venusEventCount}[/]次");
+                    EventLoggerDisplay.MarkupLog($"一共召唤了[aqua]{concernedTurnTotal}[/]次女神，女神来了[aqua]{venusEventCount}[/]次");
                 }
                 //统计女神持续回合数
                 {
@@ -221,7 +227,7 @@ namespace EventLoggerPlugin
                     {
                         linetoPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
                     }
-                    AnsiConsole.MarkupLine(linetoPrint);
+                    EventLoggerDisplay.MarkupLog(linetoPrint);
                 }
 
                 //统计训练属性pt收益
@@ -301,7 +307,7 @@ namespace EventLoggerPlugin
                         table.AddRow(outputItems);
                     }
 
-                    AnsiConsole.Write(table);
+                    EventLoggerDisplay.SetPanel("training-summary", "训练收益", table);
                 }
             }
             if (whichScenario == (int)ScenarioType.LArc)
@@ -324,7 +330,7 @@ namespace EventLoggerPlugin
                         if (SSSCount == 0) contNonSSS += stats[i].larc_SSPersonCount;
                     }
                 }
-                AnsiConsole.MarkupLine($"一共进行了[aqua]{fullSSCount}[/]次SS训练，其中[aqua]{SSSCount}[/]次为SSS，已经连续[#80ff00]{contNonSSS}[/]人头不是SSS{(contNonSSS >= 8 ? "，[aqua]下次必为SSS[/]" : "")}");
+                EventLoggerDisplay.MarkupLog($"一共进行了[aqua]{fullSSCount}[/]次SS训练，其中[aqua]{SSSCount}[/]次为SSS，已经连续[#80ff00]{contNonSSS}[/]人头不是SSS{(contNonSSS >= 8 ? "，[aqua]下次必为SSS[/]" : "")}");
                 m_fullSSCount = fullSSCount;
                 m_SSSCount = SSSCount;
                 m_contNonSSS = contNonSSS;
@@ -375,17 +381,17 @@ namespace EventLoggerPlugin
                     double bn_1 = Binomial.CDF(0.4, zuoyueClickedTimesNonAbroad, zuoyueChargedTimes - 1);
                     zuoyuePerformance = $"，超过了[aqua]{(bn + bn_1) / 2 * 100:0.0}%[/]的佐岳";
                 }
-                AnsiConsole.MarkupLine($"远征点了[#80ff00]{zuoyueClickedTimesAbroad}[/]次佐岳，加了[#80ff00]{zuoyueEventTimesAbroad}[/]次适性pt");
-                AnsiConsole.MarkupLine($"非远征点了[aqua]{zuoyueClickedTimesNonAbroad}[/]次佐岳，充了[aqua]{zuoyueChargedTimes}[/]次电" + zuoyuePerformance);
+                EventLoggerDisplay.MarkupLog($"远征点了[#80ff00]{zuoyueClickedTimesAbroad}[/]次佐岳，加了[#80ff00]{zuoyueEventTimesAbroad}[/]次适性pt");
+                EventLoggerDisplay.MarkupLog($"非远征点了[aqua]{zuoyueClickedTimesNonAbroad}[/]次佐岳，充了[aqua]{zuoyueChargedTimes}[/]次电" + zuoyuePerformance);
 
                 // 统计事件收益
                 if (EventLogger.AllEvents.Count > 0)
                 {
-                    AnsiConsole.MarkupLine($"事件数：[cyan]{EventLogger.AllEvents.Count}[/]"
+                    EventLoggerDisplay.MarkupLog($"事件数：[cyan]{EventLogger.AllEvents.Count}[/]"
                                           + $"，平均事件强度: [cyan]{EventLogger.AllEvents.Average(x => x.EventStrength):#.##}[/]"
                                           + $"，继承属性：[cyan]{string.Join('+', EventLogger.InheritStats)}[/]");
-                    AnsiConsole.MarkupLine($"连续事件出现 [yellow]{EventLogger.CardEventCount}[/] 次，已走完 [yellow]{EventLogger.CardEventFinishCount}[/] 张卡。");
-                    AnsiConsole.MarkupLine($"赌狗事件出现[yellow] {EventLogger.SuccessEventCount} [/]次，" +
+                    EventLoggerDisplay.MarkupLog($"连续事件出现 [yellow]{EventLogger.CardEventCount}[/] 次，已走完 [yellow]{EventLogger.CardEventFinishCount}[/] 张卡。");
+                    EventLoggerDisplay.MarkupLog($"赌狗事件出现[yellow] {EventLogger.SuccessEventCount} [/]次，" +
                         $"赌了[yellow] {EventLogger.SuccessEventSelectCount}[/] 次，成功 [yellow]{EventLogger.SuccessEventSuccessCount}[/] 次");
                 }
             }
@@ -417,7 +423,7 @@ namespace EventLoggerPlugin
                         friendChargedTimes += 1;
                 }
 
-                AnsiConsole.MarkupLine($"共点了[aqua]{friendClickedTimes}[/]次凉花，加了[aqua]{friendChargedTimes}[/]次体力");
+                EventLoggerDisplay.MarkupLog($"共点了[aqua]{friendClickedTimes}[/]次凉花，加了[aqua]{friendChargedTimes}[/]次体力");
             }
             if (whichScenario == (int)ScenarioType.Legend)
             {
@@ -447,7 +453,7 @@ namespace EventLoggerPlugin
                         friendChargedTimes += 1;
                 }
 
-                AnsiConsole.MarkupLine($"共点了[aqua]{friendClickedTimes}[/]次团卡，启动了[aqua]{friendChargedTimes}[/]次");
+                EventLoggerDisplay.MarkupLog($"共点了[aqua]{friendClickedTimes}[/]次团卡，启动了[aqua]{friendChargedTimes}[/]次");
 
                 //统计女神持续回合数
                 {
@@ -481,7 +487,7 @@ namespace EventLoggerPlugin
                     {
                         linetoPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
                     }
-                    AnsiConsole.MarkupLine(linetoPrint);
+                    EventLoggerDisplay.MarkupLog(linetoPrint);
                 }
             }
         }

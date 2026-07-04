@@ -1,30 +1,24 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <RunPostBuildEvent>Always</RunPostBuildEvent>
-    <Version>1.1.0</Version>
-  </PropertyGroup>
+	<PropertyGroup>
+		<IsUraPlugin>true</IsUraPlugin>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Version>2026.3.9</Version>
+		<!-- 自动把本插件的 NuGet 依赖闭包(MathNet.Numerics 及其传递依赖)拷到输出；宿主依赖由 URA-Plugins 根 targets 统一提供 -->
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
-  <ItemGroup>
-    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-  </ItemGroup>
+		<!-- URA 插件元数据 -->
+		<PluginDisplayName>记录事件信息&amp;干劲等</PluginDisplayName>
+		<PluginAuthor>xulai1001</PluginAuthor>
+		<PluginDescription>记录掉干劲的次数，事件加的属性，走完率等</PluginDescription>
+		<PluginRepositoryUrl>https://github.com/URA-Plugins/EventLoggerPlugin</PluginRepositoryUrl>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\UmaAIConnector\UmamusumeResponseAnalyzer\UmamusumeResponseAnalyzer.csproj" />
-   <!-- <ProjectReference Include="..\..\UmamusumeResponseAnalyzer\UmamusumeResponseAnalyzer\UmamusumeResponseAnalyzer.csproj" /> -->
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="manifest.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="copy /Y &quot;$(TargetPath)&quot; &quot;%25localappdata%25/UmamusumeResponseAnalyzer/Plugins/EventLoggerPlugin/&quot;" />
-  </Target>
+	<ItemGroup>
+		<PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	</ItemGroup>
 
 </Project>

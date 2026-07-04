@@ -1,15 +1,16 @@
 ﻿using Gallop;
 using MathNet.Numerics.Distributions;
 using MathNet.Numerics.RootFinding;
-using MessagePack;
-using MessagePack;
 using Newtonsoft.Json;
 using Spectre.Console;
-using UmamusumeResponseAnalyzer;
-using static UmamusumeResponseAnalyzer.Localization.Game;
+using UmamusumeResponseAnalyzer.LiveDisplay;
 
 namespace EventLoggerPlugin
 {
+    public readonly record struct EventLoggerSnapshot(
+        SingleModeChara? CharaInfo,
+        SingleModeEventInfo[]? UncheckedEvents,
+        SingleModeSelectIndexInfo[]? SelectIndexInfo);
 
     public class LogValue
     {
@@ -99,6 +100,7 @@ namespace EventLoggerPlugin
         public static readonly int[] ExcludedFriendCards = [30160, 30137, 30067, 30052, 10104, 30188, 10109, 30207, 30241, 30257, 30276, 10128, 10138, 10141, 30290];
         // 这些回合不能触发连续事件
         public static readonly int[] ExcludedTurns = [1, 25, 31, 35, 37, 38, 39, 40, 49, 51, 55, 59, 61, 62, 63, 64, 72, 73, 74, 75, 76, 77, 78];
+        public static string DataDirectory { get; set; } = Path.Combine("PluginData", "EventLoggerPlugin");
 
         public static List<LogEvent> CardEvents = []; // 支援卡事件
         public static List<LogEvent> AllEvents = []; // 全部事件（除去排除的）
@@ -133,23 +135,23 @@ namespace EventLoggerPlugin
         public static bool captureVitalSpending = false;    // 是否统计体力消耗的开关
 
         // 获取当前的属性
-        public static LogValue Capture(SingleModeCheckEventResponse @event)
+        public static LogValue Capture(EventLoggerSnapshot snapshot)
         {
-            // sanity check
-            if (@event.data.chara_info == null) return LogValue.NULL;
+            var chara = snapshot.CharaInfo;
+            if (chara == null) return LogValue.NULL;
             var currentFiveValue = new int[]
             {
-                    @event.data.chara_info.speed,
-                    @event.data.chara_info.stamina,
-                    @event.data.chara_info.power,
-                    @event.data.chara_info.guts,
-                    @event.data.chara_info.wiz,
+                    chara.speed,
+                    chara.stamina,
+                    chara.power,
+                    chara.guts,
+                    chara.wiz,
             };
             var currentFiveValueRevised = currentFiveValue.Select(ScoreUtils.ReviseOver1200);
             var totalValue = currentFiveValueRevised.Sum();
-            var pt = @event.data.chara_info.skill_point;
-            var vital = @event.data.chara_info.vital;
-            CurrentScenario = @event.data.chara_info.scenario_id;
+            var pt = chara.skill_point;
+            var vital = chara.vital;
+            CurrentScenario = chara.scenario_id;
             return new LogValue()
             {
                 Stats = totalValue,
@@ -157,16 +159,21 @@ namespace EventLoggerPlugin
                 Vital = vital
             };
         }
+
+        static SingleModeChara RequireChara(EventLoggerSnapshot snapshot)
+            => snapshot.CharaInfo
+                ?? throw new InvalidOperationException("EventLogger 需要响应 DTO 的 chara_info。");
+
         public static void Print(string s)
         {
-            // 以后可能用别的打印方式
-            AnsiConsole.MarkupLine(s);
+            EventLoggerDisplay.MarkupLog(s);
         }
 
         //--------------------------
         // 这个方法在重复发送第一回合时会被反复调用，需要可重入
-        public static void Init(SingleModeCheckEventResponse @event)
+        public static void Init(EventLoggerSnapshot snapshot)
         {
+            var chara = RequireChara(snapshot);
             CardEvents = [];
             AllEvents = [];
             InheritStats = [];
@@ -178,9 +185,9 @@ namespace EventLoggerPlugin
             SuccessEventSelectCount = 0;
             CurrentScenario = 0;
             IsStart = false;
-            InitTurn = @event.data.chara_info.turn;
+            InitTurn = chara.turn;
             // 需要传入SupportCard数组以确认带了哪些卡
-            CardIDs = @event.data.chara_info.support_card_array.Select(x => x.support_card_id).ToList();
+            CardIDs = chara.support_card_array.Select(x => x.support_card_id).ToList();
             CardEventRemaining = 0;
             foreach (var c in CardIDs)
             {
@@ -198,35 +205,39 @@ namespace EventLoggerPlugin
         }
 
         // 开始记录属性变化
-        public static void Start(SingleModeCheckEventResponse @event)
+        public static void Start(EventLoggerSnapshot snapshot)
         {
-            LastValue = Capture(@event);
+            LastValue = Capture(snapshot);
             LastEvent = new LogEvent();
             IsStart = true;
         }
 
         // 结束记录前一个事件的属性变化，并保存
-        public static void Update(SingleModeCheckEventResponse @event)
+        public static void Update(EventLoggerSnapshot snapshot)
         {
+            var chara = RequireChara(snapshot);
+            var uncheckedEvents = snapshot.UncheckedEvents;
             // sanity check
             if (LastEvent == null)
             {
-                Init(@event);
+                Init(snapshot);
                 IsStart = true;
             }
+            var lastEvent = LastEvent
+                ?? throw new InvalidOperationException("EventLogger 初始化后 LastEvent 仍为空。");
             // 获取上一个事件的结果
-            if (IsStart && @event.data.select_index != null && @event.data.select_index != 1)
+            var selectedIndex = FirstSelectIndex(snapshot.SelectIndexInfo);
+            if (IsStart && selectedIndex is { } index && index != 1)
             {
                 // 不太对
-                //Print($"[yellow]上次事件结果: {(State)@event.data.select_index}[/]");
-                LastEvent.SelectIndex = (int)@event.data.select_index;
+                lastEvent.SelectIndex = index;
             }
 
             // 获取技能表和适性
-            if (IsStart && @event.data.chara_info != null)
+            if (IsStart)
             {
-                var currentSkillTip = SkillTipsToDict(@event.data.chara_info.skill_tips_array);
-                var currentSkill = @event.data.chara_info.skill_array.ToDictionary(x => x.skill_id);
+                var currentSkillTip = SkillTipsToDict(chara.skill_tips_array);
+                var currentSkill = chara.skill_array.ToDictionary(x => x.skill_id);
                 var newSkills = new List<string>();
 
                 if (lastSkill != null)
@@ -236,7 +247,7 @@ namespace EventLoggerPlugin
                         if (!lastSkill.ContainsKey(k) || lastSkill[k].level != currentSkill[k].level)
                         {
                             var skill = currentSkill[k];
-                            var name = SkillManagerGenerator.Default[skill.skill_id]?.DisplayName ?? $"#{skill.skill_id}";
+                            var name = $"#{skill.skill_id}";
                             //Print($"[violet]习得技能 {name}[/]");
                             newSkills.Add(name);
                         }
@@ -254,7 +265,7 @@ namespace EventLoggerPlugin
                 lastSkill = currentSkill;
                 lastSkillTips = currentSkillTip;
 
-                var currProper = UpdateProper(@event);
+                var currProper = UpdateProper(chara);
                 if (lastProper != null && lastProper.Count() == currProper.Count())
                 {
                     string[] properText = ["", "G", "F", "E", "D", "C", "B", "A", "S"];
@@ -268,12 +279,12 @@ namespace EventLoggerPlugin
             }
 
             // 获得上一个动作或事件的属性并保存
-            var currentValue = Capture(@event);
-            LastEvent.Value = currentValue - LastValue;
+            var currentValue = Capture(snapshot);
+            lastEvent.Value = currentValue - LastValue;
             // 记录体力消耗(不记录恢复)
             if (captureVitalSpending)
             {
-                LastVital = LastEvent.Value.Vital;
+                LastVital = lastEvent.Value.Vital;
                 if (LastVital < 0)
                 {
                     var spent = Math.Abs(LastVital);
@@ -286,22 +297,22 @@ namespace EventLoggerPlugin
                 }
             }
             // 分析事件
-            if (IsStart && @event.data.unchecked_event_array != null)
+            if (IsStart && uncheckedEvents != null)
             {
-                if (@event.data.unchecked_event_array.Count() > 0)
+                if (uncheckedEvents.Length > 0)
                 {
-                    var choices = @event.data.unchecked_event_array.First().event_contents_info.choice_array;
+                    var choices = uncheckedEvents.First().event_contents_info.choice_array;
                     if (choices.Count() > 0)
-                        LastEvent.SelectIndex = choices[0].select_index;
+                        lastEvent.SelectIndex = FirstSelectIndex(choices[0]);
                 }
 
                 // 分析事件
-                var eventType = LastEvent.StoryId / 100000000;
-                var rarity = LastEvent.StoryId / 10000000 % 10;    // 取第二位-稀有度
-                var which = LastEvent.StoryId % 100;   // 取低2位
-                var cardId = LastEvent.StoryId / 1000 % 100000;
+                var eventType = lastEvent.StoryId / 100000000;
+                var rarity = lastEvent.StoryId / 10000000 % 10;    // 取第二位-稀有度
+                var which = lastEvent.StoryId % 100;   // 取低2位
+                var cardId = lastEvent.StoryId / 1000 % 100000;
 
-                if (!ExcludedEvents.Contains(LastEvent.StoryId))
+                if (!ExcludedEvents.Contains(lastEvent.StoryId))
                 {
                     // 首先判断是否为支援卡事件，如"8 30161 003"
                     if (eventType == 8)
@@ -311,9 +322,9 @@ namespace EventLoggerPlugin
                             if (CardIDs.Contains(cardId))   // 是携带的支援卡
                             {
                                 // sanity check 防止重入
-                                if (CardEvents.Any(e => e.StoryId == LastEvent.StoryId))
+                                if (CardEvents.Any(e => e.StoryId == lastEvent.StoryId))
                                 {
-                                    AnsiConsole.MarkupLine($"[red]已经记录该连续事件: {LastEvent.StoryId}, 忽略重复记录[/]");
+                                    EventLoggerDisplay.MarkupLog($"[red]已经记录该连续事件: {lastEvent.StoryId}, 忽略重复记录[/]", LiveDisplaySeverity.Warning);
                                 }
                                 else
                                 {
@@ -322,8 +333,8 @@ namespace EventLoggerPlugin
                                     // 记录事件
                                     var logEntry = new CardEventLogEntry
                                     {
-                                        scenarioId = @event.data.chara_info.scenario_id,
-                                        turn = @event.data.chara_info.turn,
+                                        scenarioId = chara.scenario_id,
+                                        turn = chara.turn,
                                         eventType = eventType,
                                         cardId = cardId,
                                         rarity = rarity,
@@ -338,16 +349,10 @@ namespace EventLoggerPlugin
                                     }
                                     else
                                     {
-                                        if (IsEventInterrupted(null))
-                                        {
-                                            ++CardEventFinishCount;
-                                            logEntry.isFinished = true;
-                                        }
-                                        else
-                                            Print($"[yellow]连续事件 {which} / {rarity}[/]");
+                                        Print($"[yellow]连续事件 {which} / {rarity}[/]");
                                     }
                                     if (CardEventFinishCount == 5)
-                                        CardEventFinishTurn = @event.data.chara_info.turn;
+                                        CardEventFinishTurn = chara.turn;
                                     WriteLog(logEntry);
                                 }
                             }
@@ -355,43 +360,43 @@ namespace EventLoggerPlugin
                             {
                                 Print($"[red]乱入连续事件[/]");
                             }
-                            CardEvents.Add(new LogEvent(LastEvent));
+                            CardEvents.Add(new LogEvent(lastEvent));
                         }
-                        AllEvents.Add(new LogEvent(LastEvent));
-                        Print($">> {LastEvent.Value.Explain()}");
+                        AllEvents.Add(new LogEvent(lastEvent));
+                        Print($">> {lastEvent.Value.Explain()}");
                     }
-                    else if (!LastEvent.Value.IsEmpty && LastEvent.Pt >= 0)
+                    else if (!lastEvent.Value.IsEmpty && lastEvent.Pt >= 0)
                     {
                         // 马娘或系统事件
                         // 过滤掉特判的、不加属性的。
                         // pt<0的是因为点了技能，会干扰统计，也排除掉
-                        var st = LastEvent.EventStrength;
+                        var st = lastEvent.EventStrength;
                         if (st < 0 || st >= MinEventStrength) // 过滤掉蚊子腿事件（<0是坏事件，需要留着）
                         {
-                            AllEvents.Add(new LogEvent(LastEvent));
-                            Print($">> #{LastEvent.StoryId}: {LastEvent.Value.Explain()}");
+                            AllEvents.Add(new LogEvent(lastEvent));
+                            Print($">> #{lastEvent.StoryId}: {lastEvent.Value.Explain()}");
                         }
                     }
                 }
                 else
                 {
                     // 分析特殊事件
-                    if (LastEvent.StoryId == 400000040)    // 继承
+                    if (lastEvent.StoryId == 400000040)    // 继承
                     { 
                         var color = "yellow";
-                        if (LastEvent.Stats < 126)
+                        if (lastEvent.Stats < 126)
                             color = "red";
-                        else if (LastEvent.Stats >= 192)
+                        else if (lastEvent.Stats >= 192)
                             color = "green";
-                        Print($"[{color}]本次继承属性：{LastEvent.Stats}, Pt: {LastEvent.Pt}[/]");
-                        InheritStats.Add(LastEvent.Stats);
+                        Print($"[{color}]本次继承属性：{lastEvent.Stats}, Pt: {lastEvent.Pt}[/]");
+                        InheritStats.Add(lastEvent.Stats);
                     }
                 } // if excludedevents
-                LastEvent.StoryId = @event.data.unchecked_event_array.Count() > 0 ? @event.data.unchecked_event_array.First().story_id : -1;
+                lastEvent.StoryId = uncheckedEvents.Length > 0 ? uncheckedEvents.First().story_id : -1;
             } // if isstart
             // 保存当前回合数和story_id到lastEvent，用于下次调用
             LastValue = currentValue;
-            LastEvent.Turn = @event.data.chara_info.turn;            
+            lastEvent.Turn = chara.turn;
         }
 
         public static Dictionary<int, SkillTips> SkillTipsToDict(SkillTips[] tips)
@@ -419,12 +424,6 @@ namespace EventLoggerPlugin
                             old_level = v.level;
                         }
                         var name = $"#{skill.group_id}, {skill.rarity}, {skill.level}";
-                        var sks = SkillManagerGenerator.Default[(skill.group_id, skill.rarity)];
-                        if (sks != null && sks.Count() >= 1)
-                        {
-                            var which = sks[0].Name.Contains("◎") ? 1 : 0;  // 排除双圈
-                            name = sks[which].DisplayName;
-                        }
                         newTips.Add(new SkillTipInfo
                         {
                             name = name,
@@ -439,39 +438,21 @@ namespace EventLoggerPlugin
 
         public static void WriteLog(CardEventLogEntry entry)
         {
-            var filename = "PluginData/EventLoggerPlugin/events.json";
-            List<CardEventLogEntry> events = new List<CardEventLogEntry>();
-            // 读取现有事件记录
-            if (File.Exists(filename))
-            {
-                try
-                {
-                    var f = File.ReadAllText(filename);
-                    events = JsonConvert.DeserializeObject<List<CardEventLogEntry>>(f);
-                    if (events == null) events = new List<CardEventLogEntry>();
-                }
-                catch
-                {
-                    AnsiConsole.MarkupLine($"[red]读取 events.json 出错，请检查 EventLoggerPlugin 插件[/]");
-                }
-            }
-            // 写入
-            try
-            {
-                events.Add(entry);
-                File.WriteAllText(filename, JsonConvert.SerializeObject(events, Formatting.Indented));
-            }
-            catch (Exception e)
-            {
-                AnsiConsole.MarkupLine($"[red]写入 events.json 出错，请检查 EventLoggerPlugin 插件[/]");
-                AnsiConsole.WriteLine(e.Message);
-            }
+            Directory.CreateDirectory(DataDirectory);
+            var filename = Path.Combine(DataDirectory, "events.json");
+            var events = File.Exists(filename)
+                ? JsonConvert.DeserializeObject<List<CardEventLogEntry>>(File.ReadAllText(filename)) ?? []
+                : [];
+
+            events.Add(entry);
+            File.WriteAllText(filename, JsonConvert.SerializeObject(events, Formatting.Indented));
         }
 
-        public static void AnalyzeSuccessionChoice(SingleModeCheckEventResponse @event) { 
+        public static void AnalyzeSuccessionChoice(EventLoggerSnapshot snapshot) {
             Print("[lime]------ 继承选择 ------[/]");
-            var chara = @event.data.chara_info;
-            var se = @event.data.unchecked_event_array.First().succession_event_info;
+            var chara = RequireChara(snapshot);
+            var se = snapshot.UncheckedEvents?.FirstOrDefault()?.succession_event_info
+                ?? throw new InvalidOperationException("EventLogger 需要 succession_event_info。");
             string[] properText = ["", "G", "F", "E", "D", "C", "B", "A", "S"];
 
             var currentFiveValue = new int[]
@@ -485,7 +466,7 @@ namespace EventLoggerPlugin
             var currentFiveValueRevised = currentFiveValue.Select(ScoreUtils.ReviseOver1200);
             var totalValue = currentFiveValueRevised.Sum();
             var pt = chara.skill_point;
-            var proper = UpdateProper(@event);
+            var proper = UpdateProper(chara);
 
             var table = new Table();
             var cols = new List<Markup>();
@@ -495,9 +476,9 @@ namespace EventLoggerPlugin
             foreach (var choice in se.succession_gain_info_array)
             {
                 var lines = new List<string>();
-                var newTotal = choice.FiveStatus.Select(ScoreUtils.ReviseOver1200).Sum();
+                var newTotal = FiveStatus(choice).Select(ScoreUtils.ReviseOver1200).Sum();
                 var newPt = choice.skill_point;
-                var newProper = choice.Proper;
+                var newProper = Proper(choice);
                 lines.Add($"属性: [cyan]{newTotal - totalValue}[/], PT: {newPt - pt}");
                 // 统计适性
                 foreach (var k in newProper.Keys)
@@ -518,105 +499,68 @@ namespace EventLoggerPlugin
                 cols.Add(new Markup(string.Join("\n", lines)));
             }
             table.AddRow(cols);
-            AnsiConsole.Write(table);            
-        }
-
-        /// <summary>
-        ///  判断是否断事件
-        /// </summary>
-        /// <param name="request_choice">手动选择时，为@event.choice_number - 1</param>
-        public static bool IsEventInterrupted(int? request_choice)
-        {
-            if (LastEvent != null && Database.Events.TryGetValue(LastEvent.StoryId, out var story))
-            {
-                var eventType = LastEvent.StoryId / 100000000;
-                var cardId = LastEvent.StoryId / 1000 % 100000;
-                var rarity = LastEvent.StoryId / 10000000 % 10;  // 取第二位-稀有度
-                var which = LastEvent.StoryId % 100;   // 取低2位
-
-                if (request_choice != null)
-                {
-                    var choiceIndex = (int)request_choice;
-                    // 主动选择断事件
-                    // 是非友人事件，且记录了事件效果
-                    if (eventType == 8 &&
-                        !ExcludedFriendCards.Contains(cardId) &&
-                        story.Choices.Count > choiceIndex &&
-                        story.Choices[choiceIndex].Count > 0)
-                    {
-                        var choice = story.Choices[choiceIndex][0];
-                        // 判断是否为断事件
-                        if (choice.SuccessEffectValue != null && choice.SuccessEffectValue.Extras.Any(x => x.Contains("打ち切り")))
-                        {
-                            Print(@"[red]事件中断[/]");
-                            return true;
-                        }
-                    }
-                }
-                else
-                {
-                    // 自动断事件
-                    if (eventType == 8
-                        && !ExcludedFriendCards.Contains(cardId)
-                        && story.Choices.Count > 0
-                        && story.Choices[0].Count > LastEvent.SelectIndex)
-                    {
-                        var choice = story.Choices[0][LastEvent.SelectIndex];
-                        // 判断是否为断事件
-                        if (choice.SuccessEffectValue != null && choice.SuccessEffectValue.Extras.Any(x => x.Contains("打ち切り")))
-                        {
-                            Print(@"[green]事件提前完成[/]");
-                            return true;
-                        }
-                        // 特判(类似光明哥的单事件卡)
-                        if (CardEventSpecialCount.Keys.Contains(cardId) && which >= CardEventSpecialCount[cardId])
-                            return true;
-                    }
-                }   // if request_choice
-            }  // if LastEvent
-            return false;
+            EventLoggerDisplay.SetPanel("succession", "继承选择", table);
         }
 
         /// <summary>
         /// 读取适性
         /// </summary>
-        /// <param name="event">当前事件</param>
+        /// <param name="chara">当前角色状态</param>
         /// <returns>新的适性数据</returns>
-        public static Dictionary<string, int> UpdateProper(SingleModeCheckEventResponse @event)
+        public static Dictionary<string, int> UpdateProper(SingleModeChara chara)
         {
-            var chara = @event.data.chara_info;
             return new Dictionary<string, int>
             {
-                { I18N_Short, chara.proper_distance_short },
-                { I18N_Mile, chara.proper_distance_mile },
-                { I18N_Middle, chara.proper_distance_middle },
-                { I18N_Long, chara.proper_distance_long },
-                { I18N_Nige, chara.proper_running_style_nige },
-                { I18N_Oikomi, chara.proper_running_style_oikomi },
-                { I18N_Sashi, chara.proper_running_style_sashi },
-                { I18N_Senko, chara.proper_running_style_senko },
-                { I18N_Grass, chara.proper_ground_turf },
-                { I18N_Dirt, chara.proper_ground_dirt }
+                { "短", chara.proper_distance_short },
+                { "英", chara.proper_distance_mile },
+                { "中", chara.proper_distance_middle },
+                { "长", chara.proper_distance_long },
+                { "逃", chara.proper_running_style_nige },
+                { "追", chara.proper_running_style_oikomi },
+                { "差", chara.proper_running_style_sashi },
+                { "先", chara.proper_running_style_senko },
+                { "芝", chara.proper_ground_turf },
+                { "泥", chara.proper_ground_dirt }
+            };
+        }
+
+        public static int FirstSelectIndex(ChoiceArray choice)
+        {
+            return FirstSelectIndex(choice.select_index_info_array) ?? 0;
+        }
+
+        static int? FirstSelectIndex(SingleModeSelectIndexInfo[]? infos)
+        {
+            return infos?.FirstOrDefault()?.select_index;
+        }
+
+        static int[] FiveStatus(SuccessionGainInfo info)
+        {
+            return [info.speed, info.stamina, info.power, info.guts, info.wiz];
+        }
+
+        static Dictionary<string, int> Proper(SuccessionGainInfo info)
+        {
+            return new Dictionary<string, int>
+            {
+                { "短", info.proper_distance_short },
+                { "英", info.proper_distance_mile },
+                { "中", info.proper_distance_middle },
+                { "长", info.proper_distance_long },
+                { "逃", info.proper_running_style_nige },
+                { "追", info.proper_running_style_oikomi },
+                { "差", info.proper_running_style_sashi },
+                { "先", info.proper_running_style_senko },
+                { "芝", info.proper_ground_turf },
+                { "泥", info.proper_ground_dirt }
             };
         }
 
         // 当玩家选择选项时进行记录
-        public static void UpdatePlayerChoice(Gallop.SingleModeChoiceRequest @event)
+        public static void UpdatePlayerChoice(SingleModeCheckEventRequestCommon request)
         {
-            Print($"[violet]选择选项 {@event.choice_number}[/]");
-            if (IsEventInterrupted(@event.choice_number - 1))
-            {
-                var cardId = LastEvent.StoryId / 1000 % 100000;
-                var rarity = LastEvent.StoryId / 10000000 % 10;  // 取第二位-稀有度
-                var which = LastEvent.StoryId % 100;   // 取低2位
-                if (CardIDs.Contains(cardId))             // 排除打断乱入连续事件的情况
-                {
-                    ++CardEventFinishCount;
-                    CardEventRemaining -= (rarity - which); // 计算打断了几段事件，从总数里减去
-                    if (CardEventFinishCount == 5)
-                        CardEventFinishTurn = LastEvent.Turn;
-                }
-            }
+            var choiceNumber = request.choice_number;
+            Print($"[violet]选择选项 {choiceNumber}[/]");
         }
         public static List<string> PrintCardEventPerf(int scenario)
         {
@@ -665,7 +609,7 @@ namespace EventLoggerPlugin
             return ret;
         }
 
-        public static void UpdateRaceHistory(SingleModeRaceHistory[] history)
+        public static void UpdateRaceHistory(SingleRaceHistory[] history)
         {
             raceHistory = new List<int>();
             foreach (var h in history)
@@ -673,7 +617,7 @@ namespace EventLoggerPlugin
                 if (h.result_rank == 1)
                     raceHistory.Add(h.turn);
             }
-            AnsiConsole.MarkupLine($"[magenta]当前已取胜 {raceHistory.Count} 场[/]");
+            EventLoggerDisplay.MarkupLog($"[magenta]当前已取胜 {raceHistory.Count} 场[/]");
         }
     }
 }
