@@ -92,10 +92,8 @@ namespace EventLoggerPlugin
             trainLevel = new int[5];
             trainLevelCount = new int[5];
             for (int j = 0; j < 5; j++) trainLevel[j] = 1;
-            for (int j = 0; j < 5; j++) trainLevelCount[j] = 0;
 
             larc_zuoyueAtTrain = new bool[5];//佐岳是否在这个训练
-            for (int j = 0; j < 5; j++) larc_zuoyueAtTrain[j] = false;
             larc_playerChoiceSS = false;
             larc_SSPersonCount = 0;
             larc_isSSS = false;
@@ -111,14 +109,11 @@ namespace EventLoggerPlugin
             venus_venusEvent = false;
 
             uaf_friendAtTrain = new bool[5];
-            for (int j = 0; j < 5; j++) uaf_friendAtTrain[j] = false;
             uaf_friendEvent = 0;
 
             cook_friendAtTrain = new bool[5];
-            for (int j = 0; j < 5; j++) cook_friendAtTrain[j] = false;
 
             legend_friendAtTrain = new bool[5];
-            for (int j = 0; j < 5; j++) legend_friendAtTrain[j] = false;
             legend_isEffect104 = false;
             legend_friendClickEvent = false;
             legend_friendClickEventCountConcerned = true;//非情热，非第一次点击
@@ -158,7 +153,7 @@ namespace EventLoggerPlugin
                 for (var i = currentTurn - 1; i >= 1; i--)
                 {
                     if (stats[i] == null) break;
-                    if (!GameGlobal.TrainIds.Any(x => x == stats[i].playerChoice)) continue; // 没训练
+                    if (!GameGlobal.TrainIds.Contains(stats[i].playerChoice)) continue; // 没训练
                     var trainStat = stats[i].fiveTrainStats[GameGlobal.ToTrainIndex[stats[i].playerChoice]];
                     if (!stats[i].isTrainingFailed)
                         totalVitalGain += trainStat.VitalGain;
@@ -222,12 +217,12 @@ namespace EventLoggerPlugin
                         }
                         else contTurn++;
                     }
-                    string linetoPrint = $"女神持续回合数统计：";
+                    var lineToPrint = "女神持续回合数统计：";
                     for (int i = 1; i <= maxContTurns; i++)
                     {
-                        linetoPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
+                        lineToPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
                     }
-                    EventLoggerDisplay.MarkupLog(linetoPrint);
+                    EventLoggerDisplay.MarkupLog(lineToPrint);
                 }
 
                 //统计训练属性pt收益
@@ -246,7 +241,7 @@ namespace EventLoggerPlugin
                         {
                             continue;
                         }
-                        if (!GameGlobal.TrainIds.Any(x => x == stats[turn].playerChoice)) //没训练
+                        if (!GameGlobal.TrainIds.Contains(stats[turn].playerChoice)) //没训练
                             continue;
                         if (stats[turn].isTrainingFailed)//训练失败
                             continue;
@@ -349,7 +344,7 @@ namespace EventLoggerPlugin
                     }
                     bool isAbroad = (turn >= 37 && turn <= 43) || (turn >= 61 && turn <= 67);
 
-                    if (!GameGlobal.TrainIds.Any(x => x == stats[turn].playerChoice)) //没训练
+                    if (!GameGlobal.TrainIds.Contains(stats[turn].playerChoice)) //没训练
                         continue;
                     if (stats[turn].isTrainingFailed)//训练失败
                         continue;
@@ -409,7 +404,7 @@ namespace EventLoggerPlugin
                         break;
                     }
 
-                    if (!GameGlobal.TrainIds.Any(x => x == stats[turn].playerChoice)) //没训练
+                    if (!GameGlobal.TrainIds.Contains(stats[turn].playerChoice)) //没训练
                         continue;
                     if (stats[turn].isTrainingFailed)//训练失败
                         continue;
@@ -439,7 +434,7 @@ namespace EventLoggerPlugin
                         break;
                     }
 
-                    if (!GameGlobal.TrainIds.Any(x => x == stats[turn].playerChoice)) //没训练
+                    if (!GameGlobal.TrainIds.Contains(stats[turn].playerChoice)) //没训练
                         continue;
                     if (stats[turn].isTrainingFailed)//训练失败
                         continue;
@@ -482,12 +477,12 @@ namespace EventLoggerPlugin
                         }
                         else contTurn++;
                     }
-                    string linetoPrint = $"团卡持续回合数统计：";
+                    var lineToPrint = "团卡持续回合数统计：";
                     for (int i = 1; i <= maxContTurns; i++)
                     {
-                        linetoPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
+                        lineToPrint += $"[green]{i}[/]回合[yellow]{contTurns[i]}[/]次，";
                     }
-                    EventLoggerDisplay.MarkupLog(linetoPrint);
+                    EventLoggerDisplay.MarkupLog(lineToPrint);
                 }
             }
         }

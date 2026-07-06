@@ -22,7 +22,6 @@ namespace EventLoggerPlugin
         public string Explain()
         {
             return $">> 属性: {fmt(Stats)}, Pt: {fmt(Pt)}, 体力: {fmt(Vital)}；评分: +{EventStrength}";
-            // return $"属性: {fmt(Stats)}, Pt: {fmt(Pt)}, 体力: {fmt(Vital)}";
         }
         public static LogValue operator -(LogValue a, LogValue b)
         {
@@ -252,7 +251,7 @@ namespace EventLoggerPlugin
                             newSkills.Add(name);
                         }
                     }
-                    if (newSkills.Count() > 0)
+                    if (newSkills.Count > 0)
                         Print($"[violet]习得技能: {string.Join(", ", newSkills)}[/]");
                 }
                 if (lastSkillTips != null)
@@ -266,12 +265,12 @@ namespace EventLoggerPlugin
                 lastSkillTips = currentSkillTip;
 
                 var currProper = UpdateProper(chara);
-                if (lastProper != null && lastProper.Count() == currProper.Count())
+                if (lastProper != null && lastProper.Count == currProper.Count)
                 {
                     string[] properText = ["", "G", "F", "E", "D", "C", "B", "A", "S"];
                     foreach (var k in currProper.Keys)
                     {
-                        if (lastProper.Keys.Contains(k) && lastProper[k] < currProper[k])
+                        if (lastProper.ContainsKey(k) && lastProper[k] < currProper[k])
                             Print($"[yellow]{k} 适性提升: {properText[lastProper[k]]} -> {properText[currProper[k]]}[/]");
                     }
                 }
@@ -302,7 +301,7 @@ namespace EventLoggerPlugin
                 if (uncheckedEvents.Length > 0)
                 {
                     var choices = uncheckedEvents.First().event_contents_info.choice_array;
-                    if (choices.Count() > 0)
+                    if (choices.Length > 0)
                         lastEvent.SelectIndex = FirstSelectIndex(choices[0]);
                 }
 
@@ -483,7 +482,7 @@ namespace EventLoggerPlugin
                 // 统计适性
                 foreach (var k in newProper.Keys)
                 {
-                    if (proper.Keys.Contains(k) && proper[k] < newProper[k])
+                    if (proper.ContainsKey(k) && proper[k] < newProper[k])
                         lines.Add($"[yellow]{k} 适性提升: {properText[proper[k]]} -> {properText[newProper[k]]}[/]");
                 }
                 // 统计白因子数 factor_id >= 1000000
