@@ -74,7 +74,7 @@ public sealed class EventLoggerPlugin : IPlugin
             priority: SuccessionDisplayPriority);
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         try
         {
@@ -84,6 +84,7 @@ public sealed class EventLoggerPlugin : IPlugin
         {
             EventLoggerDisplay.Dispose();
         }
+        return ValueTask.CompletedTask;
     }
 
     ValueTask AnalyzeCheckEvent(SingleModeCheckEventResponse response)
