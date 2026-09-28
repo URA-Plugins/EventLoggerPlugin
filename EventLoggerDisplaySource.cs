@@ -40,11 +40,10 @@ public sealed record EventLoggerCardEventSummary(
     int Appeared,
     int Finished,
     int Remaining,
-    int FinishedTurn,
-    IReadOnlyDictionary<int, int> AppearedByCard)
+    int FinishedTurn)
 {
-    public static EventLoggerCardEventSummary Empty { get; } = new(0, 0, 0, 0, new Dictionary<int, int>());
-    public bool HasData => Appeared > 0 || Finished > 0 || Remaining > 0 || FinishedTurn > 0 || AppearedByCard.Count > 0;
+    public static EventLoggerCardEventSummary Empty { get; } = new(0, 0, 0, 0);
+    public bool HasData => Appeared > 0 || Finished > 0 || Remaining > 0 || FinishedTurn > 0;
 }
 
 public sealed record EventLoggerSuccessEventSummary(int Appeared, int Selected, int Succeeded)
@@ -81,8 +80,7 @@ public static class EventLoggerDisplaySource
                 current.CardEventCount,
                 current.CardEventFinishCount,
                 current.CardEventRemaining,
-                current.CardEventFinishTurn,
-                current.CardEventCountByCard),
+                current.CardEventFinishTurn),
             new(
                 current.SuccessEventCount,
                 current.SuccessEventSelectCount,

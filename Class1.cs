@@ -177,10 +177,11 @@ public sealed class EventLoggerPlugin : IPlugin
     ValueTask ParseTrainingRequest(SingleModeExecCommandRequest request)
     {
         var common = request.single_mode_exec_command_request_common;
+        var turn = common.current_turn;
+        EventLogger.MarkAfterTraining(turn);
         if (common.command_type != 1)
             return ValueTask.CompletedTask;
 
-        var turn = common.current_turn;
         Interlocked.Exchange(ref pendingTrainingTurn, turn);
         EventLogger.RecordPlayerChoice(turn, GameGlobal.ToTrainId[common.command_id]);
         return ValueTask.CompletedTask;
