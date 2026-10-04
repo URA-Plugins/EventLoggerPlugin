@@ -204,6 +204,7 @@ public sealed record EventLoggerRoundSnapshot(
     int CurrentScenario,
     ImmutableArray<LogEventSnapshot> CardEvents,
     ImmutableArray<LogEventSnapshot> AllEvents,
+    ImmutableArray<int> KeyEvents,
     int CardEventCount,
     int CardEventFinishCount,
     int CardEventFinishTurn,
@@ -215,7 +216,9 @@ public sealed record EventLoggerRoundSnapshot(
     ImmutableArray<int> RaceHistory,
     int VitalSpent,
     int LastVital,
-    bool IsCapturingVital)
+    bool IsCapturingVital,
+    int SkillPtSpent,
+    int AfterTrainingTurn)
 {
     public static EventLoggerRoundSnapshot Empty { get; } = new(
         false,
@@ -232,6 +235,7 @@ public sealed record EventLoggerRoundSnapshot(
         0,
         [],
         [],
+        [],
         0,
         0,
         0,
@@ -243,7 +247,9 @@ public sealed record EventLoggerRoundSnapshot(
         [],
         0,
         0,
-        false);
+        false,
+        0,
+        -1);
 
     public TurnStats NewTurnBuilder(int turn)
         => turn >= 0 && turn < Turns.Length && Turns[turn] is { } value

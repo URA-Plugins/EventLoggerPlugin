@@ -1,4 +1,4 @@
-﻿using Gallop;
+using Gallop;
 using MathNet.Numerics.Distributions;
 using Newtonsoft.Json;
 using System.Collections.Frozen;
@@ -117,16 +117,11 @@ namespace EventLoggerPlugin
     {
         static readonly object Gate = new();
         const int MinEventStrength = 25;
-        // 排除佐岳充电,SS,继承,老登三选一,第三年凯旋门（输/赢）,以及无事发生直接到下一回合的情况
-        static readonly FrozenSet<int> ExcludedEvents = new[] { 809043003, 400006112, 400000040, 400006474, 400006439, 830241003, -1 }.ToFrozenSet();
-        // 友人和团队卡不计入连续事件，这里仅排除这几个
-        static readonly FrozenSet<int> ExcludedFriendCards = new[] { 30160, 30137, 30067, 30052, 10104, 30188, 10109, 30207, 30241, 30257, 30276, 10128, 10138, 10141, 30290 }.ToFrozenSet();
-        // 这些回合不能触发连续事件
-        static readonly FrozenSet<int> ExcludedTurns = new[] { 1, 25, 31, 35, 37, 38, 39, 40, 49, 51, 55, 59, 61, 62, 63, 64, 72, 73, 74, 75, 76, 77, 78 }.ToFrozenSet();
         static string DataDirectory { get; set; } = Path.Combine("PluginData", "EventLoggerPlugin");
 
         static List<LogEvent> CardEvents = []; // 支援卡事件
         static List<LogEvent> AllEvents = []; // 全部事件（除去排除的）
+        static List<int> KeyEvents = [];   // 已发生的关键事件story_id（友人首次点击事件、携带支援卡的支援卡事件）
         static int CardEventCount;   // 连续事件发生数
         static int CardEventFinishCount; // 连续事件完成数
         static int CardEventFinishTurn;  // 如果连续事件全走完，记录回合数
@@ -135,18 +130,12 @@ namespace EventLoggerPlugin
         static int SuccessEventSelectCount;  // 赌的次数
         static int SuccessEventSuccessCount; // 成功数
         static int CurrentScenario;  // 记录当前剧本，用于判断成功事件
+        static int AfterTrainingTurn = -1;   // 最近一次点击指令的回合，-1表示本局尚未行动；任何指令选择后即进入该回合"训练后"状态
         static List<InheritGain> InheritGains = [];   // 两次继承的属性和技能点
         static Dictionary<int, SkillTips> lastSkillTips = [];   // 上一次的Hint表
         static Dictionary<int, Gallop.SkillData> lastSkill = [];  // 上一次的技能表
         static Dictionary<string, int> lastProper = [];    // 上一次的适性
         static List<int> raceHistory = [];    // 哪些回合跑了比赛。回合数从1开始
-        // 特殊支援卡（只有一段事件）
-        static readonly FrozenDictionary<int, int> CardEventSpecialCount = new Dictionary<int, int>
-        {
-            { 30244, 1 },
-            { 30258, 1 },
-            { 30270, 1 }
-        }.ToFrozenDictionary();
 
         static LogValue LastValue = new();   // 前一次调用时的总属性
         static LogEvent LastEvent = new();   // 本次调用时已经结束的事件
@@ -154,6 +143,7 @@ namespace EventLoggerPlugin
         static int InitTurn;    // 调用Init时的起始回合数
         static List<int> CardIDs = [];   // 存放配卡，以过滤乱入事件
         static int vitalSpent;  // 温泉杯统计体力消耗
+        static int skillPtSpent; // 本局累计花掉的技能点
         static int LastVital;    // 上一个动作的体力消耗
         static bool captureVitalSpending;    // 是否统计体力消耗的开关
         static EventLoggerRoundSnapshot current = EventLoggerRoundSnapshot.Empty;
@@ -241,6 +231,21 @@ namespace EventLoggerPlugin
                 PublishLocked();
             }
         }
+
+        // 玩家点击任意指令（训练/休息等，请求期）时调用，标记进入turn回合"训练后"状态
+        internal static void MarkAfterTraining(int turn)
+        {
+            lock (Gate)
+            {
+                AfterTrainingTurn = turn;
+                PublishLocked();
+            }
+        }
+
+        // 判断turn回合是否已经训练过（执行过指令）。
+        // 当前正处于该回合训练后（==）、或该回合已经过去（>，指令必然已执行过）时返回true
+        public static bool IsAfterTraining(int turn)
+            => Current.AfterTrainingTurn >= turn;
 
         internal static void MarkTrainingFailed(int turn)
         {
@@ -332,6 +337,7 @@ namespace EventLoggerPlugin
                 CurrentScenario,
                 [.. CardEvents.Select(LogEventSnapshot.From)],
                 [.. AllEvents.Select(LogEventSnapshot.From)],
+                [.. KeyEvents],
                 CardEventCount,
                 CardEventFinishCount,
                 CardEventFinishTurn,
@@ -343,7 +349,9 @@ namespace EventLoggerPlugin
                 [.. raceHistory],
                 vitalSpent,
                 LastVital,
-                captureVitalSpending));
+                captureVitalSpending,
+                skillPtSpent,
+                AfterTrainingTurn));
         }
 
         // 获取当前的属性
@@ -382,6 +390,7 @@ namespace EventLoggerPlugin
             var chara = RequireChara(snapshot);
             CardEvents = [];
             AllEvents = [];
+            KeyEvents = [];
             InheritGains = [];
             CardEventCount = 0;
             CardEventFinishTurn = 0;
@@ -390,6 +399,7 @@ namespace EventLoggerPlugin
             SuccessEventSuccessCount = 0;
             SuccessEventSelectCount = 0;
             CurrentScenario = 0;
+            AfterTrainingTurn = -1;
             IsStart = false;
             InitTurn = chara.turn;
             // 需要传入SupportCard数组以确认带了哪些卡
@@ -397,13 +407,14 @@ namespace EventLoggerPlugin
             CardEventRemaining = 0;
             foreach (var c in CardIDs)
             {
-                if (!ExcludedFriendCards.Contains(c) && c / 10000 > 1)  // 稀有度>1
+                if (!EventConstants.ExcludedFriendCards.Contains(c) && c / 10000 > 1)  // 稀有度>1
                     CardEventRemaining += c / 10000;
             }
             lastSkill = new Dictionary<int, Gallop.SkillData>();
             lastSkillTips = new Dictionary<int, SkillTips>();
             lastProper = new Dictionary<string, int>();
             vitalSpent = 0;
+            skillPtSpent = 0;
             captureVitalSpending = false;
             LastEvent = new LogEvent();
             LastValue = new LogValue();
@@ -461,7 +472,8 @@ namespace EventLoggerPlugin
                 lastEvent.SelectIndex = index;
             }
 
-            // 获取技能表和适性
+            /*
+            // 获取技能表和适性 新版技能插件暂未接入就没有这个功能了
             if (IsStart)
             {
                 var currentSkillTip = SkillTipsToDict(chara.skill_tips_array);
@@ -470,10 +482,14 @@ namespace EventLoggerPlugin
                 lastSkillTips = currentSkillTip;
                 lastProper = UpdateProper(chara);
             }
+            */
 
             // 获得上一个动作或事件的属性并保存
             var currentValue = Capture(snapshot);
             lastEvent.Value = currentValue - LastValue;
+            // 记录技能点消耗(玩家花掉的pt)：pt比之前的快照减少时累计
+            if (lastEvent.Value.Pt < 0)
+                skillPtSpent += -lastEvent.Value.Pt;
             // 记录体力消耗(不记录恢复)
             if (captureVitalSpending)
             {
@@ -497,15 +513,21 @@ namespace EventLoggerPlugin
                 var which = lastEvent.StoryId % 100;   // 取低2位
                 var cardId = lastEvent.StoryId / 1000 % 100000;
 
-                if (!ExcludedEvents.Contains(lastEvent.StoryId))
+                // 记录已发生的关键事件：友人首次点击事件
+                if (EventConstants.FriendFirstEvents.Contains(lastEvent.StoryId))
+                    KeyEvents.Add(lastEvent.StoryId);
+
+                if (!EventConstants.ExcludedEvents.Contains(lastEvent.StoryId))
                 {
                     // 首先判断是否为支援卡事件，如"8 30161 003"
                     if (eventType == 8)
                     {
-                        if (rarity > 1 && which <= rarity && !ExcludedFriendCards.Contains(cardId))    // 是连续事件
+                        if (rarity > 1 && which <= rarity && !EventConstants.ExcludedFriendCards.Contains(cardId))    // 是连续事件
                         {
                             if (CardIDs.Contains(cardId))   // 是携带的支援卡
                             {
+                                // 记录已发生的关键事件：携带支援卡的连续事件
+                                KeyEvents.Add(lastEvent.StoryId);
                                 // sanity check 防止重入
                                 if (!CardEvents.Any(e => e.StoryId == lastEvent.StoryId))
                                 {
@@ -660,7 +682,7 @@ namespace EventLoggerPlugin
                     6 | 13 => 0.35,
                     _ => 0.3
                 };
-                var n = (GameStats.CurrentTurn - InitTurn + 1) - ExcludedTurns.Count(x => x >= InitTurn && x <= GameStats.CurrentTurn);
+                var n = (GameStats.CurrentTurn - InitTurn + 1) - EventConstants.ExcludedTurns.Count(x => x >= InitTurn && x <= GameStats.CurrentTurn);
                 //(p(x<=k-1) + p(x<=k)) / 2
                 var bn = Binomial.CDF(p, n, CardEventCount);
                 var bn_1 = Binomial.CDF(p, n, CardEventCount - 1);
@@ -676,7 +698,7 @@ namespace EventLoggerPlugin
                     else
                     {
                         // 从第1回合开始记录则可以计算连续事件走完率
-                        var TurnRemaining = 78 - GameStats.CurrentTurn - ExcludedTurns.Count(x => x > GameStats.CurrentTurn); // 还剩多少回合，不包括本回合
+                        var TurnRemaining = 78 - GameStats.CurrentTurn - EventConstants.ExcludedTurns.Count(x => x > GameStats.CurrentTurn); // 还剩多少回合，不包括本回合
                         // p(x>=k) = 1-p(x<=k-1)
                         double pFinish = 0;
                         if (CardEventRemaining <= 0)
