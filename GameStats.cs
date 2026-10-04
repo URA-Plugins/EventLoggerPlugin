@@ -217,6 +217,7 @@ public sealed record EventLoggerRoundSnapshot(
     int VitalSpent,
     int LastVital,
     bool IsCapturingVital,
+    int SkillPtSpent,
     int AfterTrainingTurn)
 {
     public static EventLoggerRoundSnapshot Empty { get; } = new(
@@ -247,6 +248,7 @@ public sealed record EventLoggerRoundSnapshot(
         0,
         0,
         false,
+        0,
         -1);
 
     public TurnStats NewTurnBuilder(int turn)

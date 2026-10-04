@@ -143,6 +143,7 @@ namespace EventLoggerPlugin
         static int InitTurn;    // 调用Init时的起始回合数
         static List<int> CardIDs = [];   // 存放配卡，以过滤乱入事件
         static int vitalSpent;  // 温泉杯统计体力消耗
+        static int skillPtSpent; // 本局累计花掉的技能点
         static int LastVital;    // 上一个动作的体力消耗
         static bool captureVitalSpending;    // 是否统计体力消耗的开关
         static EventLoggerRoundSnapshot current = EventLoggerRoundSnapshot.Empty;
@@ -349,6 +350,7 @@ namespace EventLoggerPlugin
                 vitalSpent,
                 LastVital,
                 captureVitalSpending,
+                skillPtSpent,
                 AfterTrainingTurn));
         }
 
@@ -412,6 +414,7 @@ namespace EventLoggerPlugin
             lastSkillTips = new Dictionary<int, SkillTips>();
             lastProper = new Dictionary<string, int>();
             vitalSpent = 0;
+            skillPtSpent = 0;
             captureVitalSpending = false;
             LastEvent = new LogEvent();
             LastValue = new LogValue();
@@ -484,6 +487,9 @@ namespace EventLoggerPlugin
             // 获得上一个动作或事件的属性并保存
             var currentValue = Capture(snapshot);
             lastEvent.Value = currentValue - LastValue;
+            // 记录技能点消耗(玩家花掉的pt)：pt比之前的快照减少时累计
+            if (lastEvent.Value.Pt < 0)
+                skillPtSpent += -lastEvent.Value.Pt;
             // 记录体力消耗(不记录恢复)
             if (captureVitalSpending)
             {

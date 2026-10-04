@@ -52,6 +52,11 @@ public sealed class EventLoggerPlugin : IPlugin
             [EndpointPattern.Regex("^/umamusume/single_mode_team/team_race_end(?:_out)?$")],
             invocation => AnalyzeTeamRaceEnd(invocation.Payload),
             priority: -1);
+        context.Analyzers.Register<SingleModeGainSkillsResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Wildcard("/umamusume/single_mode*/gain_skills")],
+            invocation => AnalyzeGainSkills(invocation.Payload),
+            priority: -1);
         context.Analyzers.Register<SingleModeExecCommandRequest>(
             AnalyzerKind.Request,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/exec_command")],
@@ -125,6 +130,22 @@ public sealed class EventLoggerPlugin : IPlugin
             response.data?.chara_info,
             response.data?.unchecked_event_array,
             null));
+
+    // 学技能响应重发选训练状态且 skill_point 已扣减；commandResult 为 null 时 AnalyzeResponse
+    // 不会走 Start 的基线复位，由 Update 差分把扣减累计进 skillPtSpent。
+    ValueTask AnalyzeGainSkills(SingleModeGainSkillsResponse response)
+    {
+        var data = response.data;
+        if (data is null)
+            return ValueTask.CompletedTask;
+
+        // 响应不含 unchecked_event_array；空数组表示无待处理事件，保证 Update 被调用。
+        return AnalyzeResponse(new(
+            data.chara_info,
+            [],
+            null,
+            data.home_info));
+    }
 
     ValueTask AnalyzeResponse(
         EventLoggerSnapshot snapshot,
@@ -287,7 +308,8 @@ public sealed class EventLoggerPlugin : IPlugin
     {
         var levels = new[] { 1, 1, 1, 1, 1 };
         foreach (var training in chara.training_level_info_array ?? [])
-            if (GameGlobal.ToTrainIndex.TryGetValue(training.command_id, out var index))
+            // 仅抓取基础训练等级 (101,105,102,103,106)
+            if (training.command_id < 110 && GameGlobal.ToTrainIndex.TryGetValue(training.command_id, out var index))
                 levels[index] = training.level;
         return levels;
     }
