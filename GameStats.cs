@@ -10,6 +10,7 @@ public enum ScenarioType
     LArc = 6,
     UAF = 7,
     Legend = 10,
+    Pioneer = 11,
     Ramen = 14,
 }
 

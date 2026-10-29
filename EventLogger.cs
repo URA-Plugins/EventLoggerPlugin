@@ -383,6 +383,7 @@ namespace EventLoggerPlugin
             CardEvents = [];
             AllEvents = [];
             InheritGains = [];
+            raceHistory = [];
             CardEventCount = 0;
             CardEventFinishTurn = 0;
             CardEventFinishCount = 0;

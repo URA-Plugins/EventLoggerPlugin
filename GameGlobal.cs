@@ -38,7 +38,12 @@ namespace EventLoggerPlugin
             { 2305, 4 },
             { 901, 0 },
             { 902, 2 },
-            { 906, 4 }
+            { 906, 4 },
+            { 3601, 0 },
+            { 3602, 1 },
+            { 3603, 2 },
+            { 3604, 3 },
+            { 3605, 4 }
         };
         public static readonly Dictionary<int, int> ToTrainId = new Dictionary<int, int>
         {
@@ -74,7 +79,12 @@ namespace EventLoggerPlugin
             [2305] = 106,
             [901] = 101,
             [902] = 102,
-            [906] = 106
+            [906] = 106,
+            [3601] = 101,
+            [3602] = 105,
+            [3603] = 102,
+            [3604] = 103,
+            [3605] = 106
         };
     }
 }

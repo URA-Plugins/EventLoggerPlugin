@@ -16,7 +16,7 @@
 		<PluginDescription>记录掉干劲的次数，事件加的属性，走完率等</PluginDescription>
 		<PluginChangelog>适配继承技能与因子数据；拉面杯剧本 ID 设为 14，并同步状态缓存依赖；暂停 Legend 训练面板附加信息。</PluginChangelog>
 		<PluginRepositoryUrl>https://github.com/URA-Plugins/EventLoggerPlugin</PluginRepositoryUrl>
-		<PluginDependencies>LegendScenarioAnalyzer,RamenScenarioAnalyzer</PluginDependencies>
+		<PluginDependencies>LegendScenarioAnalyzer,RamenScenarioAnalyzer,PioneerScenarioAnalyzer</PluginDependencies>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -29,6 +29,9 @@
 			<Private>false</Private>
 		</ProjectReference>
 		<ProjectReference Include="deps\RamenScenarioAnalyzer\RamenScenarioAnalyzer.csproj">
+			<Private>false</Private>
+		</ProjectReference>
+		<ProjectReference Include="deps\PioneerScenarioAnalyzer\PioneerScenarioAnalyzer\PioneerScenarioAnalyzer.csproj">
 			<Private>false</Private>
 		</ProjectReference>
 	</ItemGroup>
