@@ -14,6 +14,8 @@ An `effect_type`-only succession event records its baseline and reports the revi
 
 ## Build
 
+Host SDK `2026.10.31.1` 对应的 Host 使用 Terminal.Gui `2.5.0`，无法加载依赖 Terminal.Gui `2.4.17` 的已归档 `LegendScenarioAnalyzer v2026.9.26` 正式 ZIP。Legend 为可选联动，本插件不要求安装该 ZIP。
+
 The plugin references the latest stable `UmamusumeResponseAnalyzer` NuGet package and pins linked plugin sources with Git submodules. From the repository root after cloning:
 
 ```powershell
