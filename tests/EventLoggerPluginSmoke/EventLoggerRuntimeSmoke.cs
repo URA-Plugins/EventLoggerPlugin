@@ -54,6 +54,89 @@ static partial class EventLoggerRuntimeSmoke
 
         RunTargetedLegendDisplaySequence(ui);
         RunScenarioTracking(ui);
+        RunRoundProgress(ui);
+    }
+
+    static void RunRoundProgress(WorkspaceSmokeSession ui)
+    {
+        using var context = new RuntimePluginContext(ui.Application);
+        var plugin = new EventLoggerPlugin.EventLoggerPlugin();
+        try
+        {
+            plugin.Initialize(context);
+            var check = context.AnalyzerRegistry.Registrations.Single(candidate =>
+                candidate.Kind == AnalyzerKind.Response &&
+                candidate.PayloadType == typeof(SingleModeCheckEventResponse) && candidate.Priority == -1);
+            var gainSkills = context.AnalyzerRegistry.Registrations.Single(candidate =>
+                candidate.Kind == AnalyzerKind.Response &&
+                candidate.PayloadType == typeof(SingleModeGainSkillsResponse));
+            var request = context.AnalyzerRegistry.Registrations.Single(candidate =>
+                candidate.Kind == AnalyzerKind.Request &&
+                candidate.PayloadType == typeof(SingleModeExecCommandRequest));
+
+            var response = CreateEventSummaryResponse((int)ScenarioType.Legend, 900, 1, 809001101);
+            response.data.chara_info.skill_point = 500;
+            check.Invoke(response).GetAwaiter().GetResult();
+            if (!EventLogger.Current.KeyEvents.IsEmpty || EventLogger.IsAfterTraining(1))
+                throw new InvalidOperationException("A pending event or unselected command was recorded as completed.");
+
+            response.data.unchecked_event_array[0].story_id = 830001001;
+            check.Invoke(response).GetAwaiter().GetResult();
+            response.data.unchecked_event_array = [];
+            check.Invoke(response).GetAwaiter().GetResult();
+            if (!EventLogger.Current.KeyEvents.SequenceEqual([809001101, 830001001]))
+                throw new InvalidOperationException("Completed friend and equipped-card events were not recorded in order.");
+
+            var skills = new SingleModeGainSkillsResponse
+            {
+                data = new()
+                {
+                    chara_info = response.data.chara_info,
+                    home_info = response.data.home_info,
+                },
+            };
+            skills.data.chara_info.skill_point = 450;
+            gainSkills.Invoke(skills).GetAwaiter().GetResult();
+            gainSkills.Invoke(skills).GetAwaiter().GetResult();
+            if (EventLogger.Current.SkillPtSpent != 50 || EventLogger.IsAfterTraining(1))
+                throw new InvalidOperationException("Skill learning was counted twice or marked the turn as acted.");
+            skills.data.chara_info.skill_point = 400;
+            gainSkills.Invoke(skills).GetAwaiter().GetResult();
+            skills.data.chara_info.skill_point = 460;
+            check.Invoke(response).GetAwaiter().GetResult();
+            if (EventLogger.Current.SkillPtSpent != 100)
+                throw new InvalidOperationException("Skill-point spending was not accumulated independently of later gains.");
+
+            request.Invoke(new SingleModeExecCommandRequest
+            {
+                single_mode_exec_command_request_common = new()
+                {
+                    command_type = 1, command_id = 101, current_turn = 1,
+                },
+            }).GetAwaiter().GetResult();
+            response.data.chara_info.turn = 2;
+            check.Invoke(response).GetAwaiter().GetResult();
+            if (!EventLogger.IsAfterTraining(1) || EventLogger.IsAfterTraining(2))
+                throw new InvalidOperationException("The completed command was not scoped to its turn.");
+            request.Invoke(new SingleModeExecCommandRequest
+            {
+                single_mode_exec_command_request_common = new()
+                {
+                    command_type = 2, command_id = 601, current_turn = 2,
+                },
+            }).GetAwaiter().GetResult();
+            if (!EventLogger.IsAfterTraining(2))
+                throw new InvalidOperationException("A non-training command did not mark the turn as acted.");
+
+            check.Invoke(CreateEventSummaryResponse((int)ScenarioType.Legend, 901, 1)).GetAwaiter().GetResult();
+            if (!EventLogger.Current.KeyEvents.IsEmpty || EventLogger.Current.SkillPtSpent != 0 ||
+                EventLogger.Current.AfterTrainingTurn != -1 || EventLogger.IsAfterTraining(1))
+                throw new InvalidOperationException("Round progress leaked into a new character session.");
+        }
+        finally
+        {
+            plugin.DisposeAsync().GetAwaiter().GetResult();
+        }
     }
 
     static void RunLegacySuccessionStatDisplay(WorkspaceSmokeSession ui)

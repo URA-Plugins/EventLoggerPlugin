@@ -17,7 +17,7 @@ static class AnalyzerRegistrationSmoke
         try
         {
             plugin.Initialize(context);
-            if (context.AnalyzerRegistry.Registrations.Count != 15)
+            if (context.AnalyzerRegistry.Registrations.Count != 16)
                 throw new InvalidOperationException("Programmatic analyzer registration count changed.");
             if (!ReferenceEquals(Workspace.Current, ui.Bootstrap) || before != ui.CaptureScreen())
                 throw new InvalidOperationException("Initialize changed the visible workspace or framebuffer.");

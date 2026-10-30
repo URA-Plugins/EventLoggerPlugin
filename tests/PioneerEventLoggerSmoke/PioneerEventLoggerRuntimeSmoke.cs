@@ -98,13 +98,31 @@ static class PioneerEventLoggerRuntimeSmoke
         Require(EventLogger.Current.Turns[2] is { IsTrainingFailed: false } && EventLogger.Current.CardEventCount == 1,
             "Duplicate training response contaminated the next turn or event count.");
         Train(context, 2, 105);
-        Dispatch(context, "gain_skills", Response(charaId, 2, speedGain: 10));
-        Require(EventLogger.Current.Turns[2]!.PlayerChoice == 105, "Same-turn refresh erased the recorded choice.");
-        Dispatch(context, "exec_command", Exec(Response(charaId, 3, speedGain: 10), 105));
+        var learned = Response(charaId, 2, speedGain: 10, ptGain: -100);
+        var gainSkills = new SingleModePioneerGainSkillsResponse
+        {
+            data = new()
+            {
+                chara_info = learned.data.chara_info,
+                home_info = learned.data.home_info,
+                pioneer_data_set = learned.data.pioneer_data_set
+            }
+        };
+        Dispatch(context, "gain_skills", gainSkills);
+        Require(EventLogger.Current.SkillPtSpent == 100 && EventLogger.Current.Turns[2]!.PlayerChoice == 105 &&
+            EventLogger.Current.Turns[2]!.FiveTrainStats[0]!.FiveValueGain.SequenceEqual([2, 2, 2, 2, 2]) &&
+            EventLogger.Current.Turns[2]!.FiveTrainStats[4] is { PtGain: 10, FailureRate: 20 },
+            "Pioneer skill learning lost its spending, recorded choice, or scenario training statistics.");
+        Dispatch(context, "gain_skills", gainSkills);
+        Require(EventLogger.Current.SkillPtSpent == 100, "Replayed skill learning counted the spending twice.");
+        gainSkills.data.chara_info.skill_point -= 40;
+        Dispatch(context, "gain_skills", gainSkills);
+        Require(EventLogger.Current.SkillPtSpent == 140, "Successive skill purchases did not accumulate their spending.");
+        Dispatch(context, "exec_command", Exec(Response(charaId, 3, speedGain: 10, ptGain: -140), 105));
         Require(EventLogger.Current.Turns[3]!.TrainLevelCount[1] == 1,
             "Pioneer successful training did not advance the training-level count.");
 
-        var inheritance = Response(charaId, 3, speedGain: 10);
+        var inheritance = Response(charaId, 3, speedGain: 10, ptGain: -140);
         inheritance.data.unchecked_event_array = [new()
         {
             story_id = 400000040,
@@ -112,7 +130,7 @@ static class PioneerEventLoggerRuntimeSmoke
             succession_event_info = new() { effect_type = 1 }
         }];
         Dispatch(context, "check_event", inheritance);
-        var inherited = Response(charaId, 3, speedGain: 55, ptGain: 7);
+        var inherited = Response(charaId, 3, speedGain: 55, ptGain: -133);
         Dispatch(context, "check_event", inherited);
         Require(EventLogger.Current.InheritStats.SequenceEqual([45]), "Pioneer succession statistics were lost.");
         Dispatch(context, "race_end", new SingleModePioneerRaceEndResponse
@@ -128,8 +146,10 @@ static class PioneerEventLoggerRuntimeSmoke
         RequireExtras(ui, "EventLogger", "连续事件出现 1 次", "训练赌博: 2次", "事件数: 1", "继承属性: 45, PT: 7", "胜场: 1");
         var savedId = new PioneerTrainingDisplayId(charaId, 3);
 
-        var island = Response(charaId, 4, speedGain: 155, ptGain: 7);
+        var island = Response(charaId, 4, speedGain: 155, ptGain: -133);
         Dispatch(context, "shima_training_exec", new SingleModePioneerShimaTrainingExecRequest { current_turn = 3 }, AnalyzerKind.Request);
+        Require(EventLogger.IsAfterTraining(3) && !EventLogger.IsAfterTraining(4),
+            "Island training did not mark only the requested turn as acted.");
         Dispatch(context, "shima_training_exec", new SingleModePioneerShimaTrainingExecResponse
         {
             data = new()
@@ -141,7 +161,7 @@ static class PioneerEventLoggerRuntimeSmoke
                 unchecked_event_array = [Event(830001002)]
             }
         });
-        Dispatch(context, "check_event", Response(charaId, 4, speedGain: 161, ptGain: 7));
+        Dispatch(context, "check_event", Response(charaId, 4, speedGain: 161, ptGain: -133));
         Require(EventLogger.Current.CardEventCount == 2 && EventLogger.Current.CardEvents.Last().Stats == 6,
             "Island training gains were attributed to the following support event.");
         Require(EventLogger.Current.Turns[3]!.PlayerChoice == 3101 &&
@@ -152,7 +172,7 @@ static class PioneerEventLoggerRuntimeSmoke
         Dispatch(context, "check_event", Response(charaId + 1, 1));
         Require(EventLogger.Current.CardEventCount == 0 && EventLogger.Current.AllEvents.Length == 0 &&
             EventLogger.Current.InheritStats.Length == 0 && EventLogger.Current.RaceHistory.Length == 0 &&
-            EventLogger.Current.Turns[3] is null,
+            EventLogger.Current.Turns[3] is null && EventLogger.Current.SkillPtSpent == 0 && !EventLogger.IsAfterTraining(1),
             "New Pioneer session retained events, succession, race, or training data from the prior run.");
         Require(!ui.CaptureScreen(180, 80).Contains("继承属性:", StringComparison.Ordinal),
             "New Pioneer display retained the prior session's Extra rows.");
@@ -196,7 +216,7 @@ static class PioneerEventLoggerRuntimeSmoke
         });
         Dispatch(context, "check_event", Response(charaId, 1, speedGain: 10));
         Require(EventLogger.Current.AllEvents is [{ Stats: 10 }], "Pioneer start lost its first event or retained the preceding session.");
-        string[] endpoints = ["continue", "planning", "pioneer_live", "gain_skills"];
+        string[] endpoints = ["continue", "planning", "pioneer_live"];
         for (var index = 0; index < endpoints.Length; index++)
         {
             var pending = Response(charaId, 1, speedGain: (index + 1) * 10);
@@ -206,6 +226,25 @@ static class PioneerEventLoggerRuntimeSmoke
             Require(EventLogger.Current.AllEvents.Length == index + 2 && EventLogger.Current.AllEvents.Last().Stats == 10,
                 $"Pioneer {endpoints[index]} lost or duplicated its pending event.");
         }
+        var learned = Response(charaId, 1, speedGain: 40, ptGain: -30);
+        Dispatch(context, "gain_skills", new SingleModePioneerGainSkillsResponse
+        {
+            data = new()
+            {
+                chara_info = learned.data.chara_info,
+                home_info = learned.data.home_info,
+                pioneer_data_set = learned.data.pioneer_data_set
+            }
+        });
+        Require(EventLogger.Current.SkillPtSpent == 30 && EventLogger.Current.AllEvents.Length == 4,
+            "Skill learning lost its spending or changed the completed event chain.");
+        var afterLearning = Response(charaId, 1, speedGain: 40, ptGain: -30);
+        afterLearning.data.unchecked_event_array = [Event(500001004)];
+        Dispatch(context, "check_event", afterLearning);
+        Dispatch(context, "check_event", Response(charaId, 1, speedGain: 50, ptGain: -30));
+        Require(EventLogger.Current.AllEvents.Length == 5 && EventLogger.Current.AllEvents.Last().Stats == 10 &&
+            EventLogger.Current.SkillPtSpent == 30,
+            "The event following skill learning lost its gain or changed the recorded spending.");
     }
 
     static SingleModePioneerCheckEventResponse Response(int charaId, int turn, int speedGain = 0, int ptGain = 0, bool summer = false)

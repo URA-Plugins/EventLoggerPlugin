@@ -10,6 +10,8 @@ Complete succession choices from `check_event`, `exec_command`, and `load` are p
 
 An `effect_type`-only succession event records its baseline and reports the revised five-stat gain together with the skill-point gain in the linked ScenarioAnalyzer `Extra` rows after the following response.
 
+轮次快照的 `KeyEvents` 记录友人首次点击事件与携带支援卡的连续事件；`SkillPtSpent` 按相邻状态的技能点减少量累计。普通与 Pioneer 的 `gain_skills` 响应更新消耗统计，重复响应不重复累计。`IsAfterTraining(turn)` 表示该回合已发出行动请求，包含训练、休息和 Pioneer 岛训练，不表示行动成功。
+
 ## Build
 
 The plugin references the latest stable `UmamusumeResponseAnalyzer` NuGet package and pins linked plugin sources with Git submodules. From the repository root after cloning:

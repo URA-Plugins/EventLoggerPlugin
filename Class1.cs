@@ -62,7 +62,8 @@ public sealed class EventLoggerPlugin : IPlugin
         context.Analyzers.Register<SingleModePioneerCheckEventResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Regex("^/umamusume/single_mode_pioneer/(?:change_short_cut|check_event|check_point|continue|finish_claw_crane|gain_skills|pioneer_complete|pioneer_live|planning|race_entry|race_out)$")],
-            invocation => AnalyzePioneerCheckEvent(invocation.Payload),
+            invocation => AnalyzePioneerCheckEvent(invocation.Payload,
+                invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/gain_skills"),
             priority: -1);
         context.Analyzers.Register<SingleModePioneerExecCommandResponse>(
             AnalyzerKind.Response,
@@ -84,6 +85,12 @@ public sealed class EventLoggerPlugin : IPlugin
             [EndpointPattern.Exact("/umamusume/single_mode_pioneer/race_end")],
             invocation => AnalyzePioneerRaceEnd(invocation.Payload),
             priority: -1);
+        context.Analyzers.Register<SingleModeGainSkillsResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Wildcard("/umamusume/single_mode*/gain_skills")],
+            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/gain_skills"
+                ? ValueTask.CompletedTask : AnalyzeGainSkills(invocation.Payload),
+            priority: -1);
         context.Analyzers.Register<SingleModeExecCommandRequest>(
             AnalyzerKind.Request,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/exec_command")],
@@ -94,6 +101,7 @@ public sealed class EventLoggerPlugin : IPlugin
             [EndpointPattern.Exact("/umamusume/single_mode_pioneer/shima_training_exec")],
             invocation =>
             {
+                EventLogger.MarkAfterTraining(invocation.Payload.current_turn);
                 Interlocked.Exchange(ref pendingTrainingTurn, invocation.Payload.current_turn);
                 EventLogger.RecordPlayerChoice(invocation.Payload.current_turn, 3101);
                 return ValueTask.CompletedTask;
@@ -175,10 +183,10 @@ public sealed class EventLoggerPlugin : IPlugin
             response.data?.unchecked_event_array,
             null));
 
-    ValueTask AnalyzePioneerCheckEvent(SingleModePioneerCheckEventResponse response)
+    ValueTask AnalyzePioneerCheckEvent(SingleModePioneerCheckEventResponse response, bool isGainSkills)
         => AnalyzeResponse(new(
                 response.data?.chara_info,
-                response.data?.unchecked_event_array,
+                isGainSkills && response.data is not null ? [] : response.data?.unchecked_event_array,
                 response.data?.select_index_info_array,
                 response.data?.home_info),
             pioneerDataSet: response.data?.pioneer_data_set);
@@ -212,6 +220,22 @@ public sealed class EventLoggerPlugin : IPlugin
             ? ValueTask.CompletedTask
             : AnalyzeResponse(new(common.chara_info, common.unchecked_event_array, null, common.home_info),
                 pioneerDataSet: response.data?.pioneer_data_set);
+    }
+
+    // 学技能响应重发选训练状态且 skill_point 已扣减；commandResult 为 null 时 AnalyzeResponse
+    // 不会走 Start 的基线复位，由 Update 差分把扣减累计进 skillPtSpent。
+    ValueTask AnalyzeGainSkills(SingleModeGainSkillsResponse response)
+    {
+        var data = response.data;
+        if (data is null)
+            return ValueTask.CompletedTask;
+
+        // 响应不含 unchecked_event_array；空数组表示无待处理事件，保证 Update 被调用。
+        return AnalyzeResponse(new(
+            data.chara_info,
+            [],
+            null,
+            data.home_info));
     }
 
     ValueTask AnalyzeResponse(
@@ -273,10 +297,11 @@ public sealed class EventLoggerPlugin : IPlugin
     ValueTask ParseTrainingRequest(SingleModeExecCommandRequest request)
     {
         var common = request.single_mode_exec_command_request_common;
+        var turn = common.current_turn;
+        EventLogger.MarkAfterTraining(turn);
         if (common.command_type != 1)
             return ValueTask.CompletedTask;
 
-        var turn = common.current_turn;
         Interlocked.Exchange(ref pendingTrainingTurn, turn);
         EventLogger.RecordPlayerChoice(turn, GameGlobal.ToTrainId[common.command_id]);
         return ValueTask.CompletedTask;
@@ -410,7 +435,8 @@ public sealed class EventLoggerPlugin : IPlugin
     {
         var levels = new[] { 1, 1, 1, 1, 1 };
         foreach (var training in chara.training_level_info_array ?? [])
-            if (GameGlobal.ToTrainIndex.TryGetValue(training.command_id, out var index))
+            // 仅抓取基础训练等级 (101,105,102,103,106)
+            if (training.command_id < 110 && GameGlobal.ToTrainIndex.TryGetValue(training.command_id, out var index))
                 levels[index] = training.level;
         return levels;
     }
