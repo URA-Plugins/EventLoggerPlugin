@@ -7,3 +7,6 @@
 [submodule "PioneerScenarioAnalyzer"]
 	path = deps/PioneerScenarioAnalyzer
 	url = https://github.com/URA-Plugins/PioneerScenarioAnalyzer.git
+[submodule "EventResponseAnalyzer"]
+	path = deps/EventResponseAnalyzer
+	url = https://github.com/URA-Plugins/EventResponseAnalyzer.git

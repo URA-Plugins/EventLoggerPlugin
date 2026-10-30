@@ -21,6 +21,12 @@ dotnet build .\EventLoggerPlugin.csproj -c Release -m:1 -p:RuntimeIdentifier=win
 
 ## 验证与发布
 
-Host 的 `eng/PluginTesting/Tests/PioneerEventLoggerSmoke` 验证 Pioneer 联动，使用 `UraTestPluginSourcesRoot` 指向插件仓库父目录，覆盖请求与响应分发、事件链、训练失败、夏合宿、岛训练、继承、历史快照以及缺失 Pioneer 时的独立加载。
+本仓 `tests/EventLoggerPluginSmoke` 验证分析器分发、真实 EventResponse/Legend 优先级、继承选择布局、训练失败和剧本统计，并加载本轮 ZIP 验证实际业务回调、程序集来源及清理。`deps/EventResponseAnalyzer` 仅供测试，不进入生产引用或 manifest 的 `Dependencies`。
+
+`tests/PioneerEventLoggerSmoke` 使用本仓固定的 Pioneer 源码与 fixture，覆盖请求与响应联动、事件链、训练失败、夏合宿、岛训练、继承、历史快照及缺失 Pioneer 时的独立加载。
+
+测试使用 `UraTestHostRoot` 指定匹配的 Host 源码；生产插件继续引用 NuGet。运行默认业务 smoke 前，将 `URA_PLUGIN_SMOKE_PACKAGE_ROOT` 设为本轮构建 ZIP 所在目录；测试按 manifest 的 `InternalName` 唯一匹配，不接受缺包或重复包。GitHub Actions 使用该变量，未设置时使用 workflow 的 `GITHUB_WORKSPACE/artifacts`。`--package-load` 可单独运行 ZIP 验证。所有入口先执行本仓发布边界检查，测试工具由本仓 `tests/Support` 持有。
+
+`tests/EventLoggerPluginReplaySmoke` 默认运行捕获解析与三语言错误识别自测；真实回放需传 `--corpus <目录>`。目录顶层 `*.txt` 必须以 `[整数序号]` 开头，包含 notify HTTP 头和原始 body。空语料、长度或 URL/SID 配对错误、未知端点、分发异常及可见 Error 均失败。Error 检查仅针对当前 framebuffer 的可见内容，不检查屏幕外历史或其他 workspace 的日志。真实捕获和临时回放输出不入库。
 
 在 Windows 仓库根执行 `act workflow_dispatch --artifact-server-path "$env:TEMP/ura-act-artifacts"`。本地与 GitHub 使用同一份 workflow；版本 tag 触发 GitHub Release 发布。环境要求、共用 workflow 本地映射和发布规则见 [URA plugin workflows](https://github.com/URA-Plugins/.github/blob/v1/README.md)。
