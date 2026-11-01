@@ -12,6 +12,7 @@ public enum ScenarioType
     Legend = 10,
     Pioneer = 11,
     Ramen = 14,
+    Festa = 15,
 }
 
 public sealed class TrainStats

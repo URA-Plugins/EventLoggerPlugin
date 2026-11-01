@@ -142,6 +142,7 @@ namespace EventLoggerPlugin
         static bool IsStart;
         static int InitTurn;    // 调用Init时的起始回合数
         static List<int> CardIDs = [];   // 存放配卡，以过滤乱入事件
+        static FrozenSet<int> SeriesCardIDs = FrozenSet<int>.Empty;
         static int vitalSpent;  // 温泉杯统计体力消耗
         static int skillPtSpent; // 本局累计花掉的技能点
         static int LastVital;    // 上一个动作的体力消耗
@@ -405,12 +406,8 @@ namespace EventLoggerPlugin
             InitTurn = chara.turn;
             // 需要传入SupportCard数组以确认带了哪些卡
             CardIDs = chara.support_card_array.Select(x => x.support_card_id).ToList();
-            CardEventRemaining = 0;
-            foreach (var c in CardIDs)
-            {
-                if (!EventConstants.ExcludedFriendCards.Contains(c) && c / 10000 > 1)  // 稀有度>1
-                    CardEventRemaining += c / 10000;
-            }
+            SeriesCardIDs = CardIDs.Where(IsSeriesCard).ToFrozenSet();
+            CardEventRemaining = SeriesCardIDs.Sum(id => id / 10000);
             lastSkill = new Dictionary<int, Gallop.SkillData>();
             lastSkillTips = new Dictionary<int, SkillTips>();
             lastProper = new Dictionary<string, int>();
@@ -487,7 +484,12 @@ namespace EventLoggerPlugin
 
             // 获得上一个动作或事件的属性并保存
             var currentValue = Capture(snapshot);
-            lastEvent.Value = currentValue - LastValue;
+            var delta = currentValue - LastValue;
+            // 同一待处理事件与状态重发时，等待事件推进后再结算。
+            if (delta.IsEmpty && lastEvent.Turn == chara.turn && uncheckedEvents is { Length: > 0 } &&
+                uncheckedEvents[0].story_id == lastEvent.StoryId)
+                return;
+            lastEvent.Value = delta;
             // 记录技能点消耗(玩家花掉的pt)：pt比之前的快照减少时累计
             if (lastEvent.Value.Pt < 0)
                 skillPtSpent += -lastEvent.Value.Pt;
@@ -523,7 +525,7 @@ namespace EventLoggerPlugin
                     // 首先判断是否为支援卡事件，如"8 30161 003"
                     if (eventType == 8)
                     {
-                        if (rarity > 1 && which <= rarity && !EventConstants.ExcludedFriendCards.Contains(cardId))    // 是连续事件
+                        if (which <= rarity && IsSeriesCard(cardId))    // 是连续事件
                         {
                             if (CardIDs.Contains(cardId))   // 是携带的支援卡
                             {
@@ -550,7 +552,7 @@ namespace EventLoggerPlugin
                                         ++CardEventFinishCount;    // 走完了N个事件（N是稀有度）则认为连续事件走完了                                    
                                         logEntry.isFinished = true;
                                     }
-                                    if (CardEventFinishCount == 5)
+                                    if (CardEventFinishCount == SeriesCardIDs.Count)
                                         CardEventFinishTurn = chara.turn;
                                     WriteLog(logEntry);
                                 }
@@ -665,6 +667,10 @@ namespace EventLoggerPlugin
             return infos?.FirstOrDefault()?.select_index;
         }
 
+        static bool IsSeriesCard(int cardId)
+            => cardId / 10000 > 1 && !EventConstants.ExcludedFriendCards.Contains(cardId) &&
+                !UmamusumeResponseAnalyzer.Database.Names.GetRequiredSupportCard(cardId).IsFriendCard;
+
         public static List<string> PrintCardEventPerf(int scenario)
         {
             lock (Gate)
@@ -689,7 +695,7 @@ namespace EventLoggerPlugin
                 var bn_1 = Binomial.CDF(p, n, CardEventCount - 1);
 
                 ret.Add("");
-                if (CardEventFinishCount < 5)
+                if (CardEventFinishCount < SeriesCardIDs.Count)
                 {
                     // 调试中，暂不加入I18N
                     ret.Add(string.Format("连续事件出现 {0} 次", CardEventCount));

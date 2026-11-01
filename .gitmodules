@@ -10,3 +10,6 @@
 [submodule "EventResponseAnalyzer"]
 	path = deps/EventResponseAnalyzer
 	url = https://github.com/URA-Plugins/EventResponseAnalyzer.git
+[submodule "FestaScenarioAnalyzer"]
+	path = deps/FestaScenarioAnalyzer
+	url = https://github.com/URA-Plugins/FestaScenarioAnalyzer.git

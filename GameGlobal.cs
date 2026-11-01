@@ -6,6 +6,11 @@ namespace EventLoggerPlugin
         public static readonly int[] TrainIds = [101, 105, 102, 103, 106];
         public static readonly Dictionary<int, int> ToTrainIndex = new Dictionary<int, int>
         {
+            { 5101, 0 },
+            { 5102, 1 },
+            { 5103, 2 },
+            { 5104, 3 },
+            { 5105, 4 },
             { 1101, 0 },
             { 1102, 1 },
             { 1103, 2 },
@@ -47,6 +52,11 @@ namespace EventLoggerPlugin
         };
         public static readonly Dictionary<int, int> ToTrainId = new Dictionary<int, int>
         {
+            [5101] = 101,
+            [5102] = 105,
+            [5103] = 102,
+            [5104] = 103,
+            [5105] = 106,
             [1101] = 101,
             [1102] = 105,
             [1103] = 102,

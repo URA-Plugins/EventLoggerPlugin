@@ -11,8 +11,11 @@ public sealed class EventLoggerPlugin : IPlugin
     readonly object scenarioGate = new();
     IDisposable? ramenPartProducer;
     IDisposable? pioneerPartProducer;
+    IDisposable? festaPartProducer;
     int scenarioCharaId;
-    int pendingTrainingTurn = -1;
+    PendingTraining? pendingTraining;
+
+    sealed record PendingTraining(Guid RequestId, int Turn);
 
     public void Initialize(IPluginContext context)
     {
@@ -25,18 +28,20 @@ public sealed class EventLoggerPlugin : IPlugin
             ramenPartProducer = RegisterRamenPartProducer();
         if (context.IsPluginAvailable("PioneerScenarioAnalyzer"))
             pioneerPartProducer = RegisterPioneerPartProducer();
+        if (context.IsPluginAvailable("FestaScenarioAnalyzer"))
+            festaPartProducer = RegisterFestaPartProducer();
 
         context.Analyzers.Register<SingleModeCheckEventResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/check_event")],
-            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/check_event"
+            invocation => invocation.Endpoint.Path is "/umamusume/single_mode_pioneer/check_event" or "/umamusume/single_mode_festa/check_event"
                 ? ValueTask.CompletedTask : AnalyzeCheckEvent(invocation.Payload),
             priority: -1);
         context.Analyzers.Register<SingleModeExecCommandResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/exec_command")],
-            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/exec_command"
-                ? ValueTask.CompletedTask : AnalyzeExecCommand(invocation.Payload),
+            invocation => invocation.Endpoint.Path is "/umamusume/single_mode_pioneer/exec_command" or "/umamusume/single_mode_festa/exec_command"
+                ? ValueTask.CompletedTask : AnalyzeExecCommand(invocation.Payload, invocation.Headers.RequestId),
             priority: -1);
         context.Analyzers.Register<SingleModeRaceEndResponse>(
             AnalyzerKind.Response,
@@ -45,13 +50,13 @@ public sealed class EventLoggerPlugin : IPlugin
                 EndpointPattern.Regex(
                     "^/umamusume/single_mode_(?:arc/arc_race_end|legend/legend_race_end|venus/venus_race_end)$"),
             ],
-            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/race_end"
+            invocation => invocation.Endpoint.Path is "/umamusume/single_mode_pioneer/race_end" or "/umamusume/single_mode_festa/race_end"
                 ? ValueTask.CompletedTask : AnalyzeRaceEnd(invocation.Payload),
             priority: -1);
         context.Analyzers.Register<SingleModeLoadResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/load")],
-            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/load"
+            invocation => invocation.Endpoint.Path is "/umamusume/single_mode_pioneer/load" or "/umamusume/single_mode_festa/load"
                 ? ValueTask.CompletedTask : AnalyzeLoad(invocation.Payload),
             priority: -1);
         context.Analyzers.Register<SingleModeTeamTeamRaceEndOutResponse>(
@@ -68,7 +73,7 @@ public sealed class EventLoggerPlugin : IPlugin
         context.Analyzers.Register<SingleModePioneerExecCommandResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Regex("^/umamusume/single_mode_pioneer/(?:exec_command|shima_training_exec)$")],
-            invocation => AnalyzePioneerExecCommand(invocation.Payload),
+            invocation => AnalyzePioneerExecCommand(invocation.Payload, invocation.Headers.RequestId),
             priority: -1);
         context.Analyzers.Register<SingleModePioneerLoadResponse>(
             AnalyzerKind.Response,
@@ -88,13 +93,51 @@ public sealed class EventLoggerPlugin : IPlugin
         context.Analyzers.Register<SingleModeGainSkillsResponse>(
             AnalyzerKind.Response,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/gain_skills")],
-            invocation => invocation.Endpoint.Path == "/umamusume/single_mode_pioneer/gain_skills"
+            invocation => invocation.Endpoint.Path is "/umamusume/single_mode_pioneer/gain_skills" or "/umamusume/single_mode_festa/gain_skills"
                 ? ValueTask.CompletedTask : AnalyzeGainSkills(invocation.Payload),
+            priority: -1);
+        context.Analyzers.Register<SingleModeFestaCheckEventResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Regex("^/umamusume/single_mode_festa/(?:change_short_cut|check_event|check_point|continue|finish_claw_crane|gain_skills|attach_advice|festa_live|race_entry|race_out)$")],
+            invocation => AnalyzeFestaCheckEvent(invocation.Payload,
+                invocation.Endpoint.Path == "/umamusume/single_mode_festa/gain_skills"),
+            priority: -1);
+        context.Analyzers.Register<SingleModeFestaExecCommandResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Exact("/umamusume/single_mode_festa/exec_command")],
+            invocation => AnalyzeResponse(new(invocation.Payload.data.chara_info,
+                invocation.Payload.data.unchecked_event_array, null, invocation.Payload.data.home_info),
+                invocation.Payload.data.command_result, festaDataSet: invocation.Payload.data.festa_data_set,
+                requestId: invocation.Headers.RequestId),
+            priority: -1);
+        context.Analyzers.Register<SingleModeFestaStartResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Exact("/umamusume/single_mode_festa/start")],
+            invocation =>
+            {
+                var data = invocation.Payload.data.single_mode_start_common;
+                return AnalyzeResponse(new(data.chara_info, data.unchecked_event_array, null, data.home_info),
+                    festaDataSet: invocation.Payload.data.festa_data_set);
+            }, priority: -1);
+        context.Analyzers.Register<SingleModeFestaLoadResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Exact("/umamusume/single_mode_festa/load")],
+            invocation =>
+            {
+                var data = invocation.Payload.data.single_mode_load_common;
+                return AnalyzeResponse(new(data.chara_info, data.unchecked_event_array, null, data.home_info),
+                    raceHistory: data.race_history, festaDataSet: invocation.Payload.data.festa_data_set);
+            }, priority: -1);
+        context.Analyzers.Register<SingleModeFestaRaceEndResponse>(
+            AnalyzerKind.Response,
+            [EndpointPattern.Exact("/umamusume/single_mode_festa/race_end")],
+            invocation => AnalyzeResponse(new(invocation.Payload.data.chara_info, [], null, invocation.Payload.data.home_info),
+                raceHistory: invocation.Payload.data.race_history, festaDataSet: invocation.Payload.data.festa_data_set),
             priority: -1);
         context.Analyzers.Register<SingleModeExecCommandRequest>(
             AnalyzerKind.Request,
             [EndpointPattern.Wildcard("/umamusume/single_mode*/exec_command")],
-            invocation => ParseTrainingRequest(invocation.Payload),
+            invocation => ParseTrainingRequest(invocation.Payload, invocation.Headers.RequestId),
             priority: -1);
         context.Analyzers.Register<SingleModePioneerShimaTrainingExecRequest>(
             AnalyzerKind.Request,
@@ -102,7 +145,7 @@ public sealed class EventLoggerPlugin : IPlugin
             invocation =>
             {
                 EventLogger.MarkAfterTraining(invocation.Payload.current_turn);
-                Interlocked.Exchange(ref pendingTrainingTurn, invocation.Payload.current_turn);
+                Interlocked.Exchange(ref pendingTraining, new(invocation.Headers.RequestId, invocation.Payload.current_turn));
                 EventLogger.RecordPlayerChoice(invocation.Payload.current_turn, 3101);
                 return ValueTask.CompletedTask;
             },
@@ -126,6 +169,7 @@ public sealed class EventLoggerPlugin : IPlugin
 
     public ValueTask DisposeAsync()
     {
+        Interlocked.Exchange(ref pendingTraining, null);
         try
         {
             ramenPartProducer?.Dispose();
@@ -138,7 +182,14 @@ public sealed class EventLoggerPlugin : IPlugin
             }
             finally
             {
-                EventLoggerDisplay.Dispose();
+                try
+                {
+                    festaPartProducer?.Dispose();
+                }
+                finally
+                {
+                    EventLoggerDisplay.Dispose();
+                }
             }
         }
         return ValueTask.CompletedTask;
@@ -151,14 +202,14 @@ public sealed class EventLoggerPlugin : IPlugin
             response.data?.select_index_info_array,
             response.data?.home_info));
 
-    ValueTask AnalyzeExecCommand(SingleModeExecCommandResponse response)
+    ValueTask AnalyzeExecCommand(SingleModeExecCommandResponse response, Guid requestId)
         => AnalyzeResponse(
             new(
                 response.data?.chara_info,
                 response.data?.unchecked_event_array,
                 null,
                 response.data?.home_info),
-            response.data?.command_result);
+            response.data?.command_result, requestId: requestId);
 
     ValueTask AnalyzeLoad(SingleModeLoadResponse response)
     {
@@ -191,14 +242,14 @@ public sealed class EventLoggerPlugin : IPlugin
                 response.data?.home_info),
             pioneerDataSet: response.data?.pioneer_data_set);
 
-    ValueTask AnalyzePioneerExecCommand(SingleModePioneerExecCommandResponse response)
+    ValueTask AnalyzePioneerExecCommand(SingleModePioneerExecCommandResponse response, Guid requestId)
         => AnalyzeResponse(new(
                 response.data?.chara_info,
                 response.data?.unchecked_event_array,
                 null,
                 response.data?.home_info),
             response.data?.command_result,
-            pioneerDataSet: response.data?.pioneer_data_set);
+            pioneerDataSet: response.data?.pioneer_data_set, requestId: requestId);
 
     ValueTask AnalyzePioneerLoad(SingleModePioneerLoadResponse response)
     {
@@ -222,6 +273,12 @@ public sealed class EventLoggerPlugin : IPlugin
                 pioneerDataSet: response.data?.pioneer_data_set);
     }
 
+    ValueTask AnalyzeFestaCheckEvent(SingleModeFestaCheckEventResponse response, bool isGainSkills)
+        => AnalyzeResponse(new(response.data.chara_info,
+                isGainSkills ? [] : response.data.unchecked_event_array,
+                response.data.select_index_info_array, response.data.home_info),
+            festaDataSet: response.data.festa_data_set);
+
     // 学技能响应重发选训练状态且 skill_point 已扣减；commandResult 为 null 时 AnalyzeResponse
     // 不会走 Start 的基线复位，由 Update 差分把扣减累计进 skillPtSpent。
     ValueTask AnalyzeGainSkills(SingleModeGainSkillsResponse response)
@@ -242,7 +299,9 @@ public sealed class EventLoggerPlugin : IPlugin
         EventLoggerSnapshot snapshot,
         SingleModeCommandResult? commandResult = null,
         SingleRaceHistory[]? raceHistory = null,
-        SingleModePioneerDataSet? pioneerDataSet = null)
+        SingleModePioneerDataSet? pioneerDataSet = null,
+        SingleModeFestaDataSet? festaDataSet = null,
+        Guid? requestId = null)
     {
         var pioneerWarnings = new List<string>();
         if (snapshot.CharaInfo is { scenario_id: (int)ScenarioType.Pioneer } pioneer &&
@@ -250,9 +309,11 @@ public sealed class EventLoggerPlugin : IPlugin
             EventLogger.Current.CurrentTurn != pioneer.turn)
             pioneerWarnings.Add($"警告：回合不连续，已记录到第 {EventLogger.Current.CurrentTurn} 回合，当前为第 {pioneer.turn} 回合。");
         var sessionReset = PrepareScenarioSession(snapshot);
-        var trainingTurn = commandResult is null
-            ? -1
-            : Interlocked.Exchange(ref pendingTrainingTurn, -1);
+        var pending = Volatile.Read(ref pendingTraining);
+        var trainingTurn = commandResult is not null && pending is not null && pending.RequestId == requestId &&
+                           ReferenceEquals(Interlocked.CompareExchange(ref pendingTraining, null, pending), pending)
+            ? pending.Turn
+            : -1;
         if (commandResult is not null && !sessionReset)
         {
             AnalyzeCommandResult(commandResult, trainingTurn);
@@ -272,13 +333,13 @@ public sealed class EventLoggerPlugin : IPlugin
             EnsureScenarioTurn(snapshot);
             EventLogger.RecordScenarioEvents(snapshot.UncheckedEvents);
         }
-        else if (snapshot.CharaInfo is { scenario_id: (int)ScenarioType.Pioneer })
+        else if (snapshot.CharaInfo is { scenario_id: (int)ScenarioType.Pioneer or (int)ScenarioType.Festa })
             EnsureScenarioTurn(snapshot);
 
         if (raceHistory is not null)
             EventLogger.UpdateRaceHistory(raceHistory);
 
-        TrackScenarioTurn(snapshot, pioneerDataSet, pioneerWarnings);
+        TrackScenarioTurn(snapshot, pioneerDataSet, pioneerWarnings, festaDataSet);
         UpdateScenarioDisplay(snapshot, pioneerWarnings);
 
         return ValueTask.CompletedTask;
@@ -294,7 +355,7 @@ public sealed class EventLoggerPlugin : IPlugin
             EventLogger.MarkTrainingFailed(trainingTurn);
     }
 
-    ValueTask ParseTrainingRequest(SingleModeExecCommandRequest request)
+    ValueTask ParseTrainingRequest(SingleModeExecCommandRequest request, Guid requestId)
     {
         var common = request.single_mode_exec_command_request_common;
         var turn = common.current_turn;
@@ -302,7 +363,7 @@ public sealed class EventLoggerPlugin : IPlugin
         if (common.command_type != 1)
             return ValueTask.CompletedTask;
 
-        Interlocked.Exchange(ref pendingTrainingTurn, turn);
+        Interlocked.Exchange(ref pendingTraining, new(requestId, turn));
         EventLogger.RecordPlayerChoice(turn, GameGlobal.ToTrainId[common.command_id]);
         return ValueTask.CompletedTask;
     }
@@ -310,7 +371,7 @@ public sealed class EventLoggerPlugin : IPlugin
     bool PrepareScenarioSession(EventLoggerSnapshot snapshot)
     {
         if (snapshot.CharaInfo is not { } chara ||
-            chara.scenario_id is not ((int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer))
+            chara.scenario_id is not ((int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer or (int)ScenarioType.Festa))
             return false;
 
         lock (scenarioGate)
@@ -326,15 +387,17 @@ public sealed class EventLoggerPlugin : IPlugin
                 return false;
 
             scenarioCharaId = chara.single_mode_chara_id;
+            Interlocked.Exchange(ref pendingTraining, null);
             EventLogger.ResetAndStartSession(snapshot, isFullGame: chara.turn == 1);
             return true;
         }
     }
 
-    void TrackScenarioTurn(EventLoggerSnapshot snapshot, SingleModePioneerDataSet? pioneerDataSet, List<string> pioneerWarnings)
+    void TrackScenarioTurn(EventLoggerSnapshot snapshot, SingleModePioneerDataSet? pioneerDataSet,
+        List<string> pioneerWarnings, SingleModeFestaDataSet? festaDataSet)
     {
         if (snapshot.CharaInfo is not { } chara ||
-            chara.scenario_id is not ((int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer) ||
+            chara.scenario_id is not ((int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer or (int)ScenarioType.Festa) ||
             chara.scenario_id != (int)ScenarioType.Pioneer && snapshot.HomeInfo is null)
             return;
 
@@ -362,6 +425,26 @@ public sealed class EventLoggerPlugin : IPlugin
                     UpdatePioneerTrainingLevels(stats, chara, round, pioneerWarnings);
                 }
             }
+            else if (chara.scenario_id == (int)ScenarioType.Festa)
+            {
+                if (chara.state is not (2 or 3) && chara.playing_state == 1 &&
+                    snapshot.UncheckedEvents is not { Length: > 0 } &&
+                    snapshot.HomeInfo?.command_info_array is { } commands && festaDataSet is not null &&
+                    GameGlobal.TrainIds.All(trainId => commands.Any(command => command.command_type == 1 &&
+                        GameGlobal.ToTrainId.TryGetValue(command.command_id, out var id) && id == trainId)))
+                {
+                    var selected = SelectFestaTrainingCommands(commands);
+                    stats.fiveTrainStats = CreateTrainingStats(chara, new() { command_info_array = selected },
+                        festaCommands: festaDataSet.command_info_array);
+                    stats.trainLevel = selected.Select(command =>
+                    {
+                        var levels = chara.training_level_info_array.Where(level => level.command_id == command.command_id).ToArray();
+                        if (levels.Length == 0 && command.command_id is not (>= 5101 and <= 5105))
+                            levels = [.. chara.training_level_info_array.Where(level => level.command_id == GameGlobal.ToTrainId[command.command_id])];
+                        return levels.Single().level;
+                    }).ToArray();
+                }
+            }
             else if (snapshot.HomeInfo is { } homeInfo)
             {
                 stats.fiveTrainStats = CreateTrainingStats(chara, homeInfo);
@@ -376,12 +459,25 @@ public sealed class EventLoggerPlugin : IPlugin
     static void EnsureScenarioTurn(EventLoggerSnapshot snapshot)
     {
         if (snapshot.CharaInfo is { } chara &&
-            chara.scenario_id is (int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer)
+            chara.scenario_id is (int)ScenarioType.Legend or (int)ScenarioType.Ramen or (int)ScenarioType.Pioneer or (int)ScenarioType.Festa)
             EventLogger.EnsureScenarioTurn(chara.scenario_id, chara.turn);
     }
 
+    static SingleModeCommandInfo[] SelectFestaTrainingCommands(SingleModeCommandInfo[] commands)
+        => GameGlobal.TrainIds.Select(trainId =>
+        {
+            var candidates = commands.Where(command => command.command_type == 1 &&
+                GameGlobal.ToTrainId.TryGetValue(command.command_id, out var id) && id == trainId)
+                .GroupBy(command => command.command_id is >= 5101 and <= 5105)
+                .Select(group => group.SingleOrDefault(command => command.is_enable == 1) ?? group.Single())
+                .ToArray();
+            return candidates.SingleOrDefault(command => command.command_id is >= 5101 and <= 5105 && command.is_enable == 1)
+                ?? candidates.SingleOrDefault(command => command.command_id is not (>= 5101 and <= 5105))
+                ?? candidates.Single();
+        }).ToArray();
+
     static TrainStats[] CreateTrainingStats(SingleModeChara chara, SingleModeHomeInfo homeInfo,
-        SingleModePioneerCommandInfo[]? pioneerCommands = null)
+        SingleModePioneerCommandInfo[]? pioneerCommands = null, SingleModeFestaCommandInfo[]? festaCommands = null)
     {
         var currentStats = new[] { chara.speed, chara.stamina, chara.power, chara.guts, chara.wiz };
         var result = new TrainStats[GameGlobal.TrainIds.Length];
@@ -397,7 +493,6 @@ public sealed class EventLoggerPlugin : IPlugin
                     if (parameter.target_type is >= 1 and <= 5 or 10 or 30)
                         values[parameter.target_type] += parameter.value;
 
-            var vitalGain = Math.Clamp(values[10], -chara.vital, chara.max_vital - chara.vital);
             var baseGains = Enumerable.Range(0, 5)
                 .Select(index =>
                     ScoreUtils.ReviseOver1200(currentStats[index] + values[index + 1]) -
@@ -408,6 +503,11 @@ public sealed class EventLoggerPlugin : IPlugin
                 foreach (var parameter in pioneerCommands.Single(command =>
                              GameGlobal.ToTrainId.TryGetValue(command.command_id, out var id) && id == trainId).params_inc_dec_info_array)
                     if (parameter.target_type is >= 1 and <= 5 or 30)
+                        values[parameter.target_type] += parameter.value;
+            if (festaCommands is not null)
+                foreach (var parameter in festaCommands.SingleOrDefault(command =>
+                             command.command_type == 1 && command.command_id == commands.Single().command_id)?.params_inc_dec_info_array ?? [])
+                    if (parameter.target_type is >= 1 and <= 5 or 10 or 30)
                         values[parameter.target_type] += parameter.value;
             var gains = Enumerable.Range(0, 5)
                 .Select(index =>
@@ -424,7 +524,7 @@ public sealed class EventLoggerPlugin : IPlugin
                 PtGain = values[30],
                 FiveValueGainNonScenario = baseGains,
                 PtGainNonScenario = basePtGain,
-                VitalGain = vitalGain,
+                VitalGain = Math.Clamp(values[10], -chara.vital, chara.max_vital - chara.vital),
                 FailureRate = failureRate,
             };
         }
@@ -523,6 +623,11 @@ public sealed class EventLoggerPlugin : IPlugin
                 EventLoggerScenarioDisplayPart.Capture(chara.scenario_id, chara.single_mode_chara_id, chara.turn),
                 pioneerWarnings);
         }
+        else if (chara.scenario_id == (int)ScenarioType.Festa && festaPartProducer is { } festaProducer)
+        {
+            UpdateFestaPart(festaProducer,
+                EventLoggerScenarioDisplayPart.Capture(chara.scenario_id, chara.single_mode_chara_id, chara.turn));
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -530,6 +635,9 @@ public sealed class EventLoggerPlugin : IPlugin
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     static IDisposable RegisterPioneerPartProducer() => PioneerScenarioDisplayBridge.Register();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static IDisposable RegisterFestaPartProducer() => FestaScenarioDisplayBridge.Register();
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     static void UpdateRamenPart(
@@ -540,4 +648,8 @@ public sealed class EventLoggerPlugin : IPlugin
     [MethodImpl(MethodImplOptions.NoInlining)]
     static void UpdatePioneerPart(IDisposable producer, EventLoggerScenarioDisplayPart part, IReadOnlyList<string> warnings)
         => PioneerScenarioDisplayBridge.Update(producer, part, warnings);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void UpdateFestaPart(IDisposable producer, EventLoggerScenarioDisplayPart part)
+        => FestaScenarioDisplayBridge.Update(producer, part);
 }
