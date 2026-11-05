@@ -42,5 +42,10 @@ namespace EventLoggerPlugin
             { 30258, 1 },
             { 30270, 1 }
         }.ToFrozenDictionary();
+
+        // 继承属性单次数值的显示颜色阈值（每次继承各自判定）：
+        // < RedBelow 红；[RedBelow, GreenFrom) 亮青；>= GreenFrom 亮绿。
+        public const int InheritStatsRedBelow = 200;
+        public const int InheritStatsGreenFrom = 400;
     }
 }

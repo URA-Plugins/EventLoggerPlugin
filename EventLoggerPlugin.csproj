@@ -5,7 +5,7 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<Version>2026.11.1.1</Version>
+		<Version>2026.11.5.1</Version>
 		<!-- 自动把本插件的 NuGet 运行时依赖闭包拷到输出。 -->
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
@@ -14,7 +14,7 @@
 		<PluginDisplayName>记录事件信息&amp;干劲等</PluginDisplayName>
 		<PluginAuthor>xulai1001</PluginAuthor>
 		<PluginDescription>记录掉干劲的次数，事件加的属性，走完率等</PluginDescription>
-		<PluginChangelog>适配 Festa 训练、事件、比赛与学技能统计，嵌入附加区域并排除友人连续事件；按 RequestId 关联训练结果。</PluginChangelog>
+		<PluginChangelog>适配 Festa 训练、事件、比赛与学技能统计，嵌入附加区域并排除友人连续事件；按 RequestId 关联训练结果；Festa 按原始指令区分普通训练与演目稽古并累计次数；继承属性按单次数值三档着色。</PluginChangelog>
 		<PluginRepositoryUrl>https://github.com/URA-Plugins/EventLoggerPlugin</PluginRepositoryUrl>
 		<PluginDependencies>LegendScenarioAnalyzer,RamenScenarioAnalyzer,PioneerScenarioAnalyzer,FestaScenarioAnalyzer</PluginDependencies>
 	</PropertyGroup>

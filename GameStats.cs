@@ -76,6 +76,10 @@ public sealed class TurnStats
     public int motivation;
     public TrainStats[] fiveTrainStats = new TrainStats[5];
     public int playerChoice = -1;
+    // Festa：协议原始 command_id（101–106 普通训练 / 5101–5105 演目稽古 / 601–605 合宿稽古），-1 为未记录
+    public int rawPlayerChoice = -1;
+    // Festa：本回合执行的是演目稽古（含合宿 601–605）
+    public bool isActTraining;
     public bool isTrainingFailed;
     public int[] trainLevel = [1, 1, 1, 1, 1];
     public int[] trainLevelCount = new int[5];
@@ -128,7 +132,9 @@ public sealed record TurnStatsSnapshot(
     ImmutableArray<bool> LegendFriendAtTrain,
     bool LegendIsEffect104,
     bool LegendFriendClickEvent,
-    bool LegendFriendClickEventCountConcerned)
+    bool LegendFriendClickEventCountConcerned,
+    int RawPlayerChoice,
+    bool IsActTraining)
 {
     internal static TurnStatsSnapshot From(TurnStats value) => new(
         value.isTraining,
@@ -157,7 +163,9 @@ public sealed record TurnStatsSnapshot(
         [.. value.legend_friendAtTrain],
         value.legend_isEffect104,
         value.legend_friendClickEvent,
-        value.legend_friendClickEventCountConcerned);
+        value.legend_friendClickEventCountConcerned,
+        value.rawPlayerChoice,
+        value.isActTraining);
 
     public TurnStats ToMutable() => new()
     {
@@ -188,6 +196,8 @@ public sealed record TurnStatsSnapshot(
         legend_isEffect104 = LegendIsEffect104,
         legend_friendClickEvent = LegendFriendClickEvent,
         legend_friendClickEventCountConcerned = LegendFriendClickEventCountConcerned,
+        rawPlayerChoice = RawPlayerChoice,
+        isActTraining = IsActTraining,
     };
 }
 
@@ -220,7 +230,9 @@ public sealed record EventLoggerRoundSnapshot(
     int LastVital,
     bool IsCapturingVital,
     int SkillPtSpent,
-    int AfterTrainingTurn)
+    int AfterTrainingTurn,
+    ImmutableArray<int> NormalTrainingCounts,
+    ImmutableArray<int> ActTrainingCounts)
 {
     public static EventLoggerRoundSnapshot Empty { get; } = new(
         false,
@@ -251,7 +263,9 @@ public sealed record EventLoggerRoundSnapshot(
         0,
         false,
         0,
-        -1);
+        -1,
+        [],
+        []);
 
     public TurnStats NewTurnBuilder(int turn)
         => turn >= 0 && turn < Turns.Length && Turns[turn] is { } value
@@ -265,6 +279,9 @@ internal static class GameStats
     internal static int Scenario;
     internal static int CurrentTurn;
     internal static TurnStats?[] Turns = new TurnStats?[79];
+    // Festa：本局累计的成功训练次数（普通 / 稽古，按训练位）
+    internal static int[] NormalTrainingCounts = new int[5];
+    internal static int[] ActTrainingCounts = new int[5];
     internal static int MotivationDropCount;
     internal static int FullSsCount;
     internal static int SssCount;
@@ -277,6 +294,8 @@ internal static class GameStats
         Scenario = 0;
         CurrentTurn = 0;
         Turns = new TurnStats?[79];
+        NormalTrainingCounts = new int[5];
+        ActTrainingCounts = new int[5];
         MotivationDropCount = 0;
         FullSsCount = 0;
         SssCount = 0;

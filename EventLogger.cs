@@ -321,6 +321,40 @@ namespace EventLoggerPlugin
             }
         }
 
+        /// <summary>
+        /// 记录 Festa（scenario 15）本回合执行的指令。协议 <c>command_result.command_id</c>
+        /// 同时给出原始指令与结果（1 = 失败 / 2 = 成功），据此区分普通训练与演目稽古并累计次数；
+        /// 同一回合只记第一次，重复帧不会重复计数。
+        /// </summary>
+        internal static void RecordFestaCommand(int turn, SingleModeCommandResult result)
+        {
+            lock (Gate)
+            {
+                AfterTrainingTurn = Math.Max(AfterTrainingTurn, turn);
+                if (turn >= 0 && turn < GameStats.Turns.Length &&
+                    GameStats.Turns[turn] is { } stats && stats.rawPlayerChoice < 0 &&
+                    GameGlobal.ToTrainId.TryGetValue(result.command_id, out var trainId) &&
+                    GameGlobal.ToTrainIndex.TryGetValue(result.command_id, out var slot))
+                {
+                    var isAct = result.command_id is >= 5101 and <= 5105 or >= 601 and <= 605;
+                    stats.rawPlayerChoice = result.command_id;
+                    stats.playerChoice = trainId;
+                    stats.isActTraining = isAct;
+                    if (result.result_state == 1)
+                        stats.isTrainingFailed = true;
+                    else if (result.result_state == 2)
+                    {
+                        if (isAct)
+                            GameStats.ActTrainingCounts[slot] += 1;
+                        else
+                            GameStats.NormalTrainingCounts[slot] += 1;
+                    }
+                    GameStats.RefreshSummary();
+                }
+                PublishLocked();
+            }
+        }
+
         static void PublishLocked()
         {
             Volatile.Write(ref current, new(
@@ -352,7 +386,9 @@ namespace EventLoggerPlugin
                 LastVital,
                 captureVitalSpending,
                 skillPtSpent,
-                AfterTrainingTurn));
+                AfterTrainingTurn,
+                [.. GameStats.NormalTrainingCounts],
+                [.. GameStats.ActTrainingCounts]));
         }
 
         // 获取当前的属性
