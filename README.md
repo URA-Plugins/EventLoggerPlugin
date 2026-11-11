@@ -12,11 +12,13 @@ An `effect_type`-only succession event records its baseline and reports the revi
 
 轮次快照的 `KeyEvents` 记录友人首次点击事件与携带支援卡的连续事件；`SkillPtSpent` 按相邻状态的技能点减少量累计。普通、Pioneer 与 Festa 的 `gain_skills` 响应更新消耗统计，重复响应不重复累计。`IsAfterTraining(turn)` 表示该回合已发出行动请求，包含训练、休息和 Pioneer 岛训练，不表示行动成功。
 
-训练请求与结果通过 `GameHttpHeaders.RequestId` 关联；普通、Pioneer 岛训练与 Festa 共用一条待匹配训练记录。响应 ID 不匹配时继续解析响应，不消费其他请求的训练记录，也不将训练失败归入未知回合。会话重置及插件卸载时清空待匹配记录。
+训练请求与结果通过 `GameHttpHeaders.RequestId` 关联；普通、Pioneer 岛训练与 Festa 共用一条待匹配训练记录。响应 ID 不匹配时继续解析响应，不消费其他请求的训练记录，也不将训练失败归入未知回合。会话重置及插件卸载时清空待匹配记录。Festa 另用响应中的 `command_result`（`command_id` + `result_state`）记录**原始**指令：据此区分普通训练（`101–106`）与演目稽古（`5101–5105`，含合宿 `601–605`），成功（`result_state == 2`）才累计 `NormalTrainingCounts` / `ActTrainingCounts`，失败（`1`）标记本回合训练失败；同一回合只记一次，重复帧不重复计数。
+
+继承收益显示改为逐次数值着色：每次继承各自按阈值取色（默认 `<200` 红、`200–399` 亮青、`≥400` 亮绿，可在 `EventConstants.InheritStatsRedBelow` / `InheritStatsGreenFrom` 配置），PT 保持亮青；Festa、Ramen、Legend、Pioneer 四个面板统一。
 
 Festa 接收开局、载入、事件、稽古、教诲装备、检查点、演出、比赛及学技能响应。`5101–5105` 映射到五种训练，按完整命令 ID 合并 home 与 Festa 增量；可执行稽古优先，否则取普通训练，与 Festa 面板口径一致。连续事件根据 Host 名字库的支援卡类型排除友人卡（含 `30323`），并保留特殊卡排除规则。
 
-Festa 联动使用 `deps/FestaScenarioAnalyzer` 源码依赖、manifest 软依赖与延迟桥接；Festa 不反向引用 EventLogger。两个插件须成对更新到 `2026.11.1`。附加区域及其历史显示连续事件、训练失败、事件数、继承收益和胜场；无内容不占位，同键更新不增加历史或未读。任一插件单独安装可使用自身功能。
+Festa 联动使用 `deps/FestaScenarioAnalyzer` 源码依赖、manifest 软依赖与延迟桥接；Festa 不反向引用 EventLogger。两个插件须成对更新到 `2026.11.5`。附加区域及其历史显示连续事件、训练失败、事件数、继承收益和胜场；无内容不占位，同键更新不增加历史或未读。任一插件单独安装可使用自身功能。
 
 2026-11-01 隔离回放验证 36 次稽古映射、55 次训练收益、17 场比赛与两次技能消费（8,470、1,163，累计 9,633）。六张支援卡中的友人 `30323` 不计入连续事件，总量为 15。
 

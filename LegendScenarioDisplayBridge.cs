@@ -67,18 +67,29 @@ internal static class LegendScenarioDisplayBridge
                 new LegendDisplaySegment(friend.ActivatedTimes.ToString(), LegendDisplayColor.Aqua),
                 new LegendDisplaySegment("次"));
         if (inheritGains.Count > 0)
-            rows.AddStyled(
-                new LegendDisplaySegment("继承属性: "),
-                new LegendDisplaySegment(
-                    string.Join('+', inheritGains.Select(gain => gain.Stats)),
-                    LegendDisplayColor.Cyan),
-                new LegendDisplaySegment(", PT: "),
-                new LegendDisplaySegment(
-                    string.Join('+', inheritGains.Select(gain => gain.SkillPoints)),
-                    LegendDisplayColor.Cyan));
+        {
+            var inherit = new List<LegendDisplaySegment> { new("继承属性: ") };
+            for (var i = 0; i < inheritGains.Count; i++)
+            {
+                if (i > 0)
+                    inherit.Add(new("+"));
+                var stats = inheritGains[i].Stats;
+                inherit.Add(new(stats.ToString(), InheritColor(stats)));
+            }
+            inherit.Add(new(", PT: "));
+            inherit.Add(new(string.Join('+', inheritGains.Select(gain => gain.SkillPoints)), LegendDisplayColor.Cyan));
+            rows.AddStyled(inherit.ToArray());
+        }
         if (snapshot.RaceWinCount > 0)
             rows.AddStyled(
                 new LegendDisplaySegment("胜场: "),
                 new LegendDisplaySegment(snapshot.RaceWinCount.ToString(), LegendDisplayColor.Yellow));
     }
+
+    static LegendDisplayColor InheritColor(int stats) => InheritStatsColorRules.Of(stats) switch
+    {
+        InheritStatsTone.Red => LegendDisplayColor.Red,
+        InheritStatsTone.Cyan => LegendDisplayColor.Cyan,
+        _ => LegendDisplayColor.Lime,
+    };
 }

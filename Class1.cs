@@ -340,6 +340,8 @@ public sealed class EventLoggerPlugin : IPlugin
             EventLogger.UpdateRaceHistory(raceHistory);
 
         TrackScenarioTurn(snapshot, pioneerDataSet, pioneerWarnings, festaDataSet);
+        if (commandResult is not null && snapshot.CharaInfo is { scenario_id: (int)ScenarioType.Festa } festaChara)
+            EventLogger.RecordFestaCommand(festaChara.turn, commandResult);
         UpdateScenarioDisplay(snapshot, pioneerWarnings);
 
         return ValueTask.CompletedTask;

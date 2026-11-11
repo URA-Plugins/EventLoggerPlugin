@@ -12,7 +12,7 @@ namespace EventLoggerPlugin
         SingleModeSelectIndexInfo[]? SelectIndexInfo,
         SingleModeHomeInfo? HomeInfo = null);
 
-    internal readonly record struct InheritGain(int Stats, int SkillPoints);
+    internal readonly record struct InheritGain(int Stats, int SkillPoints, int[] Limit);
 
     sealed class LogValue
     {
@@ -132,6 +132,8 @@ namespace EventLoggerPlugin
         static int CurrentScenario;  // 记录当前剧本，用于判断成功事件
         static int AfterTrainingTurn = -1;   // 最近一次点击指令的回合，-1表示本局尚未行动；任何指令选择后即进入该回合"训练后"状态
         static List<InheritGain> InheritGains = [];   // 两次继承的属性和技能点
+        static int[] LastLimit = new int[5];   // 上一帧观测到的五维上限（协议原值），只留一帧
+        static int[]? PendingInheritLimit;    // 继承事件出现那一帧之前的五维上限，结算后清空
         static Dictionary<int, SkillTips> lastSkillTips = [];   // 上一次的Hint表
         static Dictionary<int, Gallop.SkillData> lastSkill = [];  // 上一次的技能表
         static Dictionary<string, int> lastProper = [];    // 上一次的适性
@@ -321,6 +323,40 @@ namespace EventLoggerPlugin
             }
         }
 
+        /// <summary>
+        /// 记录 Festa（scenario 15）本回合执行的指令。协议 <c>command_result.command_id</c>
+        /// 同时给出原始指令与结果（1 = 失败 / 2 = 成功），据此区分普通训练与演目稽古并累计次数；
+        /// 同一回合只记第一次，重复帧不会重复计数。
+        /// </summary>
+        internal static void RecordFestaCommand(int turn, SingleModeCommandResult result)
+        {
+            lock (Gate)
+            {
+                AfterTrainingTurn = Math.Max(AfterTrainingTurn, turn);
+                if (turn >= 0 && turn < GameStats.Turns.Length &&
+                    GameStats.Turns[turn] is { } stats && stats.rawPlayerChoice < 0 &&
+                    GameGlobal.ToTrainId.TryGetValue(result.command_id, out var trainId) &&
+                    GameGlobal.ToTrainIndex.TryGetValue(result.command_id, out var slot))
+                {
+                    var isAct = result.command_id is >= 5101 and <= 5105 or >= 601 and <= 605;
+                    stats.rawPlayerChoice = result.command_id;
+                    stats.playerChoice = trainId;
+                    stats.isActTraining = isAct;
+                    if (result.result_state == 1)
+                        stats.isTrainingFailed = true;
+                    else if (result.result_state == 2)
+                    {
+                        if (isAct)
+                            GameStats.ActTrainingCounts[slot] += 1;
+                        else
+                            GameStats.NormalTrainingCounts[slot] += 1;
+                    }
+                    GameStats.RefreshSummary();
+                }
+                PublishLocked();
+            }
+        }
+
         static void PublishLocked()
         {
             Volatile.Write(ref current, new(
@@ -347,12 +383,15 @@ namespace EventLoggerPlugin
                 SuccessEventSelectCount,
                 SuccessEventSuccessCount,
                 [.. InheritGains.Select(gain => gain.Stats)],
+                [.. InheritGains.Select(gain => gain.Limit.ToImmutableArray())],
                 [.. raceHistory],
                 vitalSpent,
                 LastVital,
                 captureVitalSpending,
                 skillPtSpent,
-                AfterTrainingTurn));
+                AfterTrainingTurn,
+                [.. GameStats.NormalTrainingCounts],
+                [.. GameStats.ActTrainingCounts]));
         }
 
         // 获取当前的属性
@@ -416,6 +455,8 @@ namespace EventLoggerPlugin
             captureVitalSpending = false;
             LastEvent = new LogEvent();
             LastValue = new LogValue();
+            LastLimit = CaptureLimit(chara);
+            PendingInheritLimit = null;
             LastVital = 0;
         }
 
@@ -485,6 +526,12 @@ namespace EventLoggerPlugin
             // 获得上一个动作或事件的属性并保存
             var currentValue = Capture(snapshot);
             var delta = currentValue - LastValue;
+            // 继承事件待结算：留住上限基线。效果可能在事件帧当帧就生效，也可能下一帧才生效，
+            // 故取「上一帧」与「本帧」的逐项较小值——上限只增不减，较小值一定是继承前那一档。
+            // 必须在下面的事件重发早退之前取，否则重发帧会漏掉基线。
+            if (PendingInheritLimit is null && uncheckedEvents is { Length: > 0 } &&
+                uncheckedEvents[0].story_id == 400000040)
+                PendingInheritLimit = LowerLimit(LastLimit, CaptureLimit(chara));
             // 同一待处理事件与状态重发时，等待事件推进后再结算。
             if (delta.IsEmpty && lastEvent.Turn == chara.turn && uncheckedEvents is { Length: > 0 } &&
                 uncheckedEvents[0].story_id == lastEvent.StoryId)
@@ -576,14 +623,45 @@ namespace EventLoggerPlugin
                     // 分析特殊事件
                     if (lastEvent.StoryId == 400000040)    // 继承
                     {
-                        InheritGains.Add(new(lastEvent.Stats, lastEvent.Pt));
+                        int[] limitGain;
+                        if (PendingInheritLimit is { } before)
+                        {
+                            var now = CaptureLimit(chara);
+                            limitGain = new int[5];
+                            for (var i = 0; i < 5; i++)
+                                limitGain[i] = Math.Max(0, now[i] - before[i]);
+                        }
+                        else
+                            limitGain = [];    // 基线没拿到，留空而不是填 0
+                        PendingInheritLimit = null;
+                        InheritGains.Add(new(lastEvent.Stats, lastEvent.Pt, limitGain));
                     }
                 } // if excludedevents
                 lastEvent.StoryId = uncheckedEvents.Length > 0 ? uncheckedEvents.First().story_id : -1;
             } // if isstart
             // 保存当前回合数和story_id到lastEvent，用于下次调用
             LastValue = currentValue;
+            LastLimit = CaptureLimit(chara);
             lastEvent.Turn = chara.turn;
+        }
+
+        /// <summary>五维上限，协议原值（不做 1200 以上不减半换算）。</summary>
+        static int[] CaptureLimit(SingleModeChara chara) =>
+        [
+            chara.max_speed,
+            chara.max_stamina,
+            chara.max_power,
+            chara.max_guts,
+            chara.max_wiz
+        ];
+
+        /// <summary>逐项取较小值。上限只增不减，用于从两帧里取「继承前」那一档。</summary>
+        static int[] LowerLimit(int[] a, int[] b)
+        {
+            var result = new int[5];
+            for (var i = 0; i < 5; i++)
+                result[i] = Math.Min(a[i], b[i]);
+            return result;
         }
 
         static Dictionary<int, SkillTips> SkillTipsToDict(SkillTips[] tips)

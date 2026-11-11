@@ -49,18 +49,29 @@ internal static class RamenScenarioDisplayBridge
                 new RamenDisplaySegment(snapshot.SuccessEvents.Succeeded.ToString(), RamenDisplayColor.Yellow),
                 new RamenDisplaySegment("次"));
         if (part.InheritGains.Count > 0)
-            display.Extra.AddStyled(
-                new RamenDisplaySegment("继承属性: "),
-                new RamenDisplaySegment(
-                    string.Join('+', part.InheritGains.Select(gain => gain.Stats)),
-                    RamenDisplayColor.Cyan),
-                new RamenDisplaySegment(", PT: "),
-                new RamenDisplaySegment(
-                    string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)),
-                    RamenDisplayColor.Cyan));
+        {
+            var inherit = new List<RamenDisplaySegment> { new("继承属性: ") };
+            for (var i = 0; i < part.InheritGains.Count; i++)
+            {
+                if (i > 0)
+                    inherit.Add(new("+"));
+                var stats = part.InheritGains[i].Stats;
+                inherit.Add(new(stats.ToString(), InheritColor(stats)));
+            }
+            inherit.Add(new(", PT: "));
+            inherit.Add(new(string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)), RamenDisplayColor.Cyan));
+            display.Extra.AddStyled(inherit.ToArray());
+        }
         if (snapshot.RaceWinCount > 0)
             display.Extra.AddStyled(
                 new RamenDisplaySegment("胜场: "),
                 new RamenDisplaySegment(snapshot.RaceWinCount.ToString(), RamenDisplayColor.Yellow));
     }
+
+    static RamenDisplayColor InheritColor(int stats) => InheritStatsColorRules.Of(stats) switch
+    {
+        InheritStatsTone.Red => RamenDisplayColor.Red,
+        InheritStatsTone.Cyan => RamenDisplayColor.Cyan,
+        _ => RamenDisplayColor.Lime,
+    };
 }

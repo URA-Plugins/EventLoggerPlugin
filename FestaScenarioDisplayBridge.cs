@@ -28,12 +28,28 @@ internal static class FestaScenarioDisplayBridge
                 new("次, 成功"), new(snapshot.SuccessEvents.Succeeded.ToString(), FestaDisplayColor.Yellow), new("次")
             ]));
         if (part.InheritGains.Count > 0)
-            rows.Add(new([
-                new("继承属性: "), new(string.Join('+', part.InheritGains.Select(gain => gain.Stats)), FestaDisplayColor.Cyan),
-                new(", PT: "), new(string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)), FestaDisplayColor.Cyan)
-            ]));
+        {
+            var inherit = new List<FestaDisplaySegment> { new("继承属性: ") };
+            for (var i = 0; i < part.InheritGains.Count; i++)
+            {
+                if (i > 0)
+                    inherit.Add(new("+"));
+                var stats = part.InheritGains[i].Stats;
+                inherit.Add(new(stats.ToString(), InheritColor(stats)));
+            }
+            inherit.Add(new(", PT: "));
+            inherit.Add(new(string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)), FestaDisplayColor.Cyan));
+            rows.Add(new([.. inherit]));
+        }
         if (snapshot.RaceWinCount > 0)
             rows.Add(new([new("胜场: "), new(snapshot.RaceWinCount.ToString(), FestaDisplayColor.Yellow)]));
         ((FestaTrainingDisplayPartProducer)registration).Update(new(part.SingleModeCharaId, part.TargetTurn), rows);
     }
+
+    static FestaDisplayColor InheritColor(int stats) => InheritStatsColorRules.Of(stats) switch
+    {
+        InheritStatsTone.Red => FestaDisplayColor.Red,
+        InheritStatsTone.Cyan => FestaDisplayColor.Cyan,
+        _ => FestaDisplayColor.Green,
+    };
 }

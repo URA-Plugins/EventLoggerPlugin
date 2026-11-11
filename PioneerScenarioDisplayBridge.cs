@@ -52,14 +52,29 @@ internal static class PioneerScenarioDisplayBridge
                 new PioneerDisplaySegment(snapshot.SuccessEvents.Succeeded.ToString(), PioneerDisplayColor.Yellow),
                 new PioneerDisplaySegment("次"));
         if (part.InheritGains.Count > 0)
-            display.Extra.AddStyled(
-                new PioneerDisplaySegment("继承属性: "),
-                new PioneerDisplaySegment(string.Join('+', part.InheritGains.Select(gain => gain.Stats)), PioneerDisplayColor.Cyan),
-                new PioneerDisplaySegment(", PT: "),
-                new PioneerDisplaySegment(string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)), PioneerDisplayColor.Cyan));
+        {
+            var inherit = new List<PioneerDisplaySegment> { new("继承属性: ") };
+            for (var i = 0; i < part.InheritGains.Count; i++)
+            {
+                if (i > 0)
+                    inherit.Add(new("+"));
+                var stats = part.InheritGains[i].Stats;
+                inherit.Add(new(stats.ToString(), InheritColor(stats)));
+            }
+            inherit.Add(new(", PT: "));
+            inherit.Add(new(string.Join('+', part.InheritGains.Select(gain => gain.SkillPoints)), PioneerDisplayColor.Cyan));
+            display.Extra.AddStyled(inherit.ToArray());
+        }
         if (snapshot.RaceWinCount > 0)
             display.Extra.AddStyled(
                 new PioneerDisplaySegment("胜场: "),
                 new PioneerDisplaySegment(snapshot.RaceWinCount.ToString(), PioneerDisplayColor.Yellow));
     }
+
+    static PioneerDisplayColor InheritColor(int stats) => InheritStatsColorRules.Of(stats) switch
+    {
+        InheritStatsTone.Red => PioneerDisplayColor.Red,
+        InheritStatsTone.Cyan => PioneerDisplayColor.Cyan,
+        _ => PioneerDisplayColor.Lime,
+    };
 }
