@@ -12,7 +12,7 @@ namespace EventLoggerPlugin
         public static readonly FrozenSet<int> ExcludedEvents = new[] { 809043003, 400006112, 400000040, 400006474, 400006439, 830241003, -1 }.ToFrozenSet();
 
         // 友人和团队卡不计入连续事件，这里仅排除这几个
-        public static readonly FrozenSet<int> ExcludedFriendCards = new[] { 30160, 30137, 30067, 30052, 10104, 30188, 10109, 30207, 30241, 30257, 30276, 10128, 10138, 10141, 30305 }.ToFrozenSet();
+        public static readonly FrozenSet<int> ExcludedFriendCards = new[] { 30160, 30137, 30067, 30052, 10104, 30188, 10109, 30207, 30241, 30257, 30276, 10128, 10138, 10141, 30305, 30323 }.ToFrozenSet();
 
         // 这些回合不能触发连续事件
         public static readonly FrozenSet<int> ExcludedTurns = new[] { 1, 25, 31, 35, 37, 38, 39, 40, 49, 51, 55, 59, 61, 62, 63, 64, 72, 73, 74, 75, 76, 77, 78 }.ToFrozenSet();
@@ -24,6 +24,7 @@ namespace EventLoggerPlugin
             809043002,  // 佐岳
             809044002,  // 凉花
             830137001,  // 女神
+            809052001,  // 吾妻
         }.ToFrozenSet();
 
 // 其他特殊事件（无需监控）
@@ -40,12 +41,14 @@ namespace EventLoggerPlugin
         {
             { 30244, 1 },
             { 30258, 1 },
-            { 30270, 1 }
+            { 30270, 1 },
+            { 30300, 1 },
+            { 30324, 1 }
         }.ToFrozenDictionary();
 
         // 继承属性单次数值的显示颜色阈值（每次继承各自判定）：
         // < RedBelow 红；[RedBelow, GreenFrom) 亮青；>= GreenFrom 亮绿。
-        public const int InheritStatsRedBelow = 200;
-        public const int InheritStatsGreenFrom = 400;
+        public const int InheritStatsRedBelow = 180;
+        public const int InheritStatsGreenFrom = 360;
     }
 }
